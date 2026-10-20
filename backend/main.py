@@ -5,7 +5,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from database import init_db
+from database import init_db, get_db_status
 from models import (
     ProjectCreate, ProjectUpdate, ProjectResponse,
     RevisionCreate, RevisionResponse, HardwareConfigModel,
@@ -63,7 +63,7 @@ def health_check():
         "status": "healthy",
         "system": "IO Signal Sudoku Allocation Platform",
         "version": "1.0.0",
-        "database": "SQLite Local Engine (Ready)"
+        "database": get_db_status()
     }
 
 # --- Project Routes ---
