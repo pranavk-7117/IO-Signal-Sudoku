@@ -5,9 +5,28 @@ import re
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
-DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("SUPABASE_DB_URL")
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+import urllib.parse
+
+def sanitize_database_url(url: Optional[str]) -> Optional[str]:
+    if not url:
+        return url
+    url = url.strip()
+    prefix = "postgresql://"
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", prefix, 1)
+    if url.startswith(prefix):
+        rest = url[len(prefix):]
+        if "@" in rest:
+            last_at_idx = rest.rfind("@")
+            user_info = rest[:last_at_idx]
+            host_info = rest[last_at_idx + 1:]
+            if ":" in user_info:
+                user, password = user_info.split(":", 1)
+                safe_password = urllib.parse.quote_plus(urllib.parse.unquote_plus(password))
+                return f"{prefix}{user}:{safe_password}@{host_info}"
+    return url
+
+DATABASE_URL = sanitize_database_url(os.environ.get("DATABASE_URL") or os.environ.get("SUPABASE_DB_URL"))
 
 IS_POSTGRES = bool(DATABASE_URL)
 
