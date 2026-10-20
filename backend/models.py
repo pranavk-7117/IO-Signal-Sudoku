@@ -1,0 +1,287 @@
+from pydantic import BaseModel, Field
+from typing import List, Dict, Optional, Any
+from datetime import datetime
+
+# --- Project Models ---
+class ProjectBase(BaseModel):
+    project_id: str = Field(..., description="Unique industrial project identifier, e.g. PRJ-DELTA-01")
+    name: str = Field(..., description="Project name")
+    customer_name: str = Field(..., description="Customer / Plant client")
+    description: Optional[str] = ""
+    system: str = Field(default="DeltaV v14.3 / CHARMs IO", description="Target DCS System")
+
+class ProjectCreate(ProjectBase):
+    pass
+
+class ProjectUpdate(BaseModel):
+    name: Optional[str] = None
+    customer_name: Optional[str] = None
+    description: Optional[str] = None
+    system: Optional[str] = None
+
+class ProjectResponse(ProjectBase):
+    id: int
+    current_revision: str
+    status: str
+    created_at: str
+    updated_at: str
+    signal_count: int = 0
+    allocated_count: int = 0
+    validation_errors_count: int = 0
+    open_tqs_count: int = 0
+
+# --- Revision Models ---
+class RevisionCreate(BaseModel):
+    revision_code: str = Field(..., description="Rev identifier, e.g. Rev A, Rev B")
+    description: Optional[str] = ""
+
+class RevisionResponse(BaseModel):
+    id: int
+    project_id: int
+    revision_code: str
+    description: str
+    source_filename: Optional[str] = None
+    template_filename: Optional[str] = None
+    created_at: str
+    is_active: bool = False
+
+# --- Hardware & Rule Configuration Models ---
+class RuleConfigModel(BaseModel):
+    enforce_logical_grouping: bool = True
+    enforce_ab_redundancy_separation: bool = True
+    enforce_cable_grouping: bool = True
+    enforce_pair_order: bool = True
+    spare_percentage: float = 10.0  # percentage of reserved CHARMs
+    allow_cross_baseplate_cables: bool = False
+    prioritize_cabinet_packing: bool = True
+    preserve_previous_assignments: bool = True
+
+class HardwareConfigModel(BaseModel):
+    cabinets_count: int = 2
+    ciocs_per_cabinet: int = 4
+    baseplates_per_cioc: int = 8
+    charms_per_baseplate: int = 12
+    spare_percentage: float = 10.0
+    rules: RuleConfigModel = Field(default_factory=RuleConfigModel)
+    compatibility_matrix: Dict[str, Dict[str, str]] = Field(default_factory=lambda: {
+        "AI": {"charm": "AI 4-20mA HART CHARM", "terminal": "Standard 2-Wire Terminal Block"},
+        "AO": {"charm": "AO 4-20mA HART CHARM", "terminal": "Standard 2-Wire Terminal Block"},
+        "DI": {"charm": "DI 24VDC Dry Contact CHARM", "terminal": "Standard 2-Wire Terminal Block"},
+        "DO": {"charm": "DO 24VDC High-Side CHARM", "terminal": "Standard 2-Wire Terminal Block"},
+        "DO-SOV": {"charm": "Isolated DO 24VDC CHARM", "terminal": "Fused Injected Power Terminal Block"},
+        "RTD": {"charm": "RTD / Resistance CHARM", "terminal": "RTD 3/4-Wire Terminal Block"},
+        "TC": {"charm": "Thermocouple / mV CHARM", "terminal": "TC Cold-Junction Terminal Block"}
+    })
+
+# --- Signal Import & Mapping Models ---
+class ColumnMappingRequest(BaseModel):
+    sheet_name: str
+    mappings: Dict[str, str]  # target_field -> source_column_name
+
+class SheetInspectResponse(BaseModel):
+    filename: str
+    file_size_kb: float
+    sheets: List[str]
+    sheet_data_preview: Dict[str, List[Dict[str, Any]]]
+    sheet_headers: Dict[str, List[str]]
+    suggested_mappings: Dict[str, str]
+
+class SignalRecord(BaseModel):
+    id: Optional[int] = None
+    tag: str
+    description: Optional[str] = ""
+    signal_type: str
+    cable_id: Optional[str] = ""
+    pair_number: Optional[int] = None
+    redundancy: Optional[str] = ""  # 'A', 'B', or empty
+    logical_group: Optional[str] = ""
+    segregation: Optional[str] = ""
+    service_id: Optional[str] = ""
+    existing_cabinet: Optional[str] = None
+    existing_cioc: Optional[str] = None
+    existing_baseplate: Optional[str] = None
+    existing_charm: Optional[int] = None
+    existing_terminal: Optional[str] = None
+    custom_fields: Optional[Dict[str, Any]] = None
+    is_valid: bool = True
+    validation_errors: Optional[List[str]] = None
+
+# --- Allocation Models ---
+class AllocationRunRequest(BaseModel):
+    project_id: int
+    revision_id: int
+    preserve_existing: bool = True
+    timeout_seconds: int = 15
+
+class AssignmentModel(BaseModel):
+    id: Optional[int] = None
+    signal_id: int
+    tag: str
+    description: str = ""
+    signal_type: str
+    cable_id: str = ""
+    pair_number: Optional[int] = None
+    redundancy: str = ""
+    logical_group: str = ""
+    cabinet_id: Optional[str] = None
+    cioc_id: Optional[str] = None
+    baseplate_id: Optional[str] = None
+    charm_index: Optional[int] = None  # 1..12
+    terminal_block: Optional[str] = None
+    charm_type: Optional[str] = None
+    status: str = "Pending"  # Allocated, Pending, Needs Review, Blocked, Spare
+    reason: Optional[str] = None
+    is_manual_override: bool = False
+
+class AssignmentUpdateModel(BaseModel):
+    cabinet_id: str
+    cioc_id: str
+    baseplate_id: str
+    charm_index: int
+    terminal_block: Optional[str] = None
+    notes: Optional[str] = None
+
+# --- Validation Models ---
+class ValidationIssueModel(BaseModel):
+    id: Optional[int] = None
+    issue_id: str
+    severity: str  # ERROR, WARNING, INFO
+    rule_name: str
+    affected_tags: List[str]
+    affected_hardware: Optional[str] = None
+    message: str
+    suggested_action: str
+    blocks_approval: bool
+
+class ValidationSummaryModel(BaseModel):
+    total_signals: int
+    allocated_count: int
+    unallocated_count: int
+    error_count: int
+    warning_count: int
+    info_count: int
+    is_fully_validated: bool
+    issues: List[ValidationIssueModel]
+
+# --- Technical Query Models ---
+class TQCreateModel(BaseModel):
+    project_id: int
+    revision_id: int
+    category: str  # Capacity, Redundancy, Signal Compatibility, Missing Information, Cable Continuity
+    description: str
+    root_cause: str
+    specific_clarification: str
+    suggested_action: str
+    affected_tags: List[str]
+    status: str = "Open"  # Open, In Review, Resolved, Closed
+
+class TQUpdateModel(BaseModel):
+    status: Optional[str] = None
+    resolution_notes: Optional[str] = None
+
+class TQResponseModel(BaseModel):
+    id: int
+    tq_code: str
+    project_id: int
+    revision_id: int
+    category: str
+    description: str
+    root_cause: str
+    specific_clarification: str
+    suggested_action: str
+    status: str
+    resolution_notes: Optional[str] = ""
+    affected_tags: List[str]
+    created_at: str
+    updated_at: str
+
+# --- Revision Diff Models ---
+class RevisionDiffItem(BaseModel):
+    tag: str
+    change_type: str  # ADDED, DELETED, MODIFIED, UNCHANGED
+    old_values: Optional[Dict[str, Any]] = None
+    new_values: Optional[Dict[str, Any]] = None
+    old_assignment: Optional[str] = None
+    new_assignment: Optional[str] = None
+    movement_status: str  # PRESERVED, MOVED, UNALLOCATED, NEW
+    movement_reason: Optional[str] = None
+
+class RevisionComparisonResponse(BaseModel):
+    base_revision: str
+    target_revision: str
+    total_added: int
+    total_deleted: int
+    total_modified: int
+    total_unchanged: int
+    total_preserved_assignments: int
+    total_moved_assignments: int
+    diff_records: List[RevisionDiffItem]
+
+# --- Utilisation Models ---
+class CharmSlotModel(BaseModel):
+    charm_index: int
+    is_allocated: bool
+    is_spare: bool
+    signal_tag: Optional[str] = None
+    signal_type: Optional[str] = None
+    charm_type: Optional[str] = None
+    terminal_block: Optional[str] = None
+
+class BaseplateUtilisationModel(BaseModel):
+    baseplate_id: str
+    total_slots: int
+    used_slots: int
+    reserved_spare_slots: int
+    free_slots: int
+    slots: List[CharmSlotModel]
+
+class CIOCUtilisationModel(BaseModel):
+    cioc_id: str
+    cabinet_id: str
+    total_baseplates: int
+    used_baseplates: int
+    total_slots: int
+    used_slots: int
+    reserved_spare_slots: int
+    free_slots: int
+    utilization_pct: float
+    baseplates: List[BaseplateUtilisationModel]
+
+class CabinetUtilisationModel(BaseModel):
+    cabinet_id: str
+    total_ciocs: int
+    used_ciocs: int
+    total_slots: int
+    used_slots: int
+    reserved_spare_slots: int
+    free_slots: int
+    utilization_pct: float
+    ciocs: List[CIOCUtilisationModel]
+
+class UtilisationSummaryModel(BaseModel):
+    total_cabinets: int
+    used_cabinets: int
+    total_ciocs: int
+    used_ciocs: int
+    total_baseplates: int
+    used_baseplates: int
+    total_charm_positions: int
+    allocated_signals: int
+    unallocated_signals: int
+    reserved_spare_positions: int
+    free_unreserved_positions: int
+    overall_utilisation_pct: float
+    spare_capacity_achieved_pct: float
+    cabinets: List[CabinetUtilisationModel]
+
+# --- Audit Log Model ---
+class AuditLogModel(BaseModel):
+    id: int
+    project_id: int
+    action: str
+    entity_type: str
+    entity_id: str
+    old_value: Optional[str] = None
+    new_value: Optional[str] = None
+    user_name: str
+    created_at: str
