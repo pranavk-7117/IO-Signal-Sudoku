@@ -1,6 +1,9 @@
 import math
-from typing import List, Dict, Set, Tuple, Optional
-from models import HardwareConfigModel, SignalRecord, AssignmentModel, ValidationIssueModel, ValidationSummaryModel
+from typing import List, Dict, Set, Tuple, Optional, Any
+from models import (
+    HardwareConfigModel, SignalRecord, AssignmentModel,
+    ValidationIssueModel, ValidationSummaryModel
+)
 
 class ValidationEngine:
     def __init__(self, config: HardwareConfigModel):
@@ -8,259 +11,278 @@ class ValidationEngine:
         self.rules = config.rules
         self.compat_matrix = config.compatibility_matrix
 
+    def validate_input_dataset(self, signals: List[SignalRecord]) -> List[ValidationIssueModel]:
+        """
+        Independently checks input dataset for completeness, tag uniqueness, valid signal types, and cable properties.
+        """
+        issues: List[ValidationIssueModel] = []
+        issue_idx = 1
+
+        tag_counts: Dict[str, int] = {}
+        for s in signals:
+            tag = (s.tag or "").strip()
+            if tag:
+                tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+        # Check 1: Unique signal tags
+        for tag, count in tag_counts.items():
+            if count > 1:
+                issues.append(ValidationIssueModel(
+                    issue_id=f"VAL-INP-{issue_idx:03d}",
+                    severity="ERROR",
+                    rule_name="Unique Signal Tagging",
+                    affected_tags=[tag],
+                    affected_hardware=None,
+                    message=f"Signal Tag '{tag}' appears {count} times in the imported IO database. Industrial DCS requires globally unique signal tags.",
+                    suggested_action="Deduplicate signal tags in customer IO list or add unique channel suffixes.",
+                    blocks_approval=True
+                ))
+                issue_idx += 1
+
+        # Check 2: Mandatory fields
+        for s in signals:
+            if not s.tag or not s.tag.strip():
+                issues.append(ValidationIssueModel(
+                    issue_id=f"VAL-INP-{issue_idx:03d}",
+                    severity="ERROR",
+                    rule_name="Mandatory Field Completeness",
+                    affected_tags=["MISSING_TAG"],
+                    affected_hardware=None,
+                    message="Signal record has missing or empty Tag name.",
+                    suggested_action="Provide a valid instrument or DCS tag name.",
+                    blocks_approval=True
+                ))
+                issue_idx += 1
+
+            if not s.signal_type or not s.signal_type.strip():
+                issues.append(ValidationIssueModel(
+                    issue_id=f"VAL-INP-{issue_idx:03d}",
+                    severity="ERROR",
+                    rule_name="Mandatory Field Completeness",
+                    affected_tags=[s.tag or "UNKNOWN"],
+                    affected_hardware=None,
+                    message=f"Signal '{s.tag}' has no signal type specified (e.g. AI, AO, DI, DO).",
+                    suggested_action="Assign valid signal type in the IO list mapping.",
+                    blocks_approval=True
+                ))
+                issue_idx += 1
+
+            # Cable pair number bounds
+            if s.pair_number is not None and s.pair_number < 1:
+                issues.append(ValidationIssueModel(
+                    issue_id=f"VAL-INP-{issue_idx:03d}",
+                    severity="ERROR",
+                    rule_name="Cable Pair Bounds",
+                    affected_tags=[s.tag or "UNKNOWN"],
+                    affected_hardware=None,
+                    message=f"Signal '{s.tag}' specifies an invalid pair number #{s.pair_number}. Pair numbers must be positive integers.",
+                    suggested_action="Correct pair number in customer IO schedule.",
+                    blocks_approval=True
+                ))
+                issue_idx += 1
+
+            # Hardware compatibility check
+            sig_type = (s.signal_type or "").upper().strip()
+            if sig_type and sig_type not in self.compat_matrix:
+                issues.append(ValidationIssueModel(
+                    issue_id=f"VAL-INP-{issue_idx:03d}",
+                    severity="ERROR",
+                    rule_name="Hardware Type Compatibility",
+                    affected_tags=[s.tag or "UNKNOWN"],
+                    affected_hardware=None,
+                    message=f"Signal '{s.tag}' type '{s.signal_type}' is not supported by DeltaV hardware catalogue.",
+                    suggested_action="Update hardware catalogue compatibility matrix in Rules & Hardware page or correct IO type in source list.",
+                    blocks_approval=True
+                ))
+                issue_idx += 1
+
+        return issues
+
+    def validate_assignments(
+        self,
+        signals: List[SignalRecord],
+        assignments: List[AssignmentModel]
+    ) -> List[ValidationIssueModel]:
+        """
+        Independently validates candidate allocations against hardware capacities, single occupancy,
+        A/B redundancy CIOC segregation, cable continuity, and spare thresholds.
+        """
+        issues: List[ValidationIssueModel] = []
+        issue_idx = 100
+
+        # Build independent hardware slot occupancy lists
+        # Address format: CAB-01/CIOC-01/BP-01/CH01
+        slot_occupants: Dict[str, List[str]] = {}
+        allocated_tags: Set[str] = set()
+
+        for a in assignments:
+            if a.status == "Allocated" and a.cabinet_id and a.cioc_id and a.baseplate_id and a.charm_index:
+                addr = f"{a.cabinet_id}/{a.cioc_id}/{a.baseplate_id}/CH{a.charm_index:02d}"
+                if addr not in slot_occupants:
+                    slot_occupants[addr] = []
+                slot_occupants[addr].append(a.tag)
+                allocated_tags.add(a.tag)
+
+                # Check slot capacity bounds
+                if a.charm_index < 1 or a.charm_index > self.config.charms_per_baseplate:
+                    issues.append(ValidationIssueModel(
+                        issue_id=f"VAL-ASN-{issue_idx:03d}",
+                        severity="ERROR",
+                        rule_name="CHARM Slot Capacity Bounds",
+                        affected_tags=[a.tag],
+                        affected_hardware=addr,
+                        message=f"Signal '{a.tag}' assigned to invalid CHARM slot #{a.charm_index}. Baseplate limit is {self.config.charms_per_baseplate} CHARMs.",
+                        suggested_action=f"Reassign to valid slot between 1 and {self.config.charms_per_baseplate}.",
+                        blocks_approval=True
+                    ))
+                    issue_idx += 1
+
+        # Check: Single slot occupancy (collision detection)
+        for addr, tags in slot_occupants.items():
+            if len(tags) > 1:
+                issues.append(ValidationIssueModel(
+                    issue_id=f"VAL-ASN-{issue_idx:03d}",
+                    severity="ERROR",
+                    rule_name="Hardware Slot Single Occupancy",
+                    affected_tags=tags,
+                    affected_hardware=addr,
+                    message=f"Hardware collision at {addr}: multiple signals allocated simultaneously: {', '.join(tags)}. Each CHARM accepts exactly 1 signal.",
+                    suggested_action="Reallocate conflicting signals to free distinct CHARM slots.",
+                    blocks_approval=True
+                ))
+                issue_idx += 1
+
+        # Check: Unallocated signals
+        for a in assignments:
+            if a.status != "Allocated":
+                is_blocking = (a.status == "Blocked")
+                issues.append(ValidationIssueModel(
+                    issue_id=f"VAL-ASN-{issue_idx:03d}",
+                    severity="ERROR" if is_blocking else "WARNING",
+                    rule_name="Complete Hardware Allocation",
+                    affected_tags=[a.tag],
+                    affected_hardware=None,
+                    message=f"Signal '{a.tag}' is unallocated (Status: {a.status}). Reason: {a.reason or 'Unassigned'}",
+                    suggested_action="Increase cabinet/baseplate capacity or resolve conflicting engineering constraints.",
+                    blocks_approval=is_blocking
+                ))
+                issue_idx += 1
+
+        # Check: Reserved spare capacity encroachment
+        spare_slots_per_bp = max(1, int(math.ceil(self.config.charms_per_baseplate * (self.config.spare_percentage / 100.0)))) if self.config.spare_percentage > 0 else 0
+        spare_threshold = self.config.charms_per_baseplate - spare_slots_per_bp
+
+        for a in assignments:
+            if a.status == "Allocated" and a.charm_index and a.charm_index > spare_threshold and spare_slots_per_bp > 0:
+                addr = f"{a.cabinet_id}/{a.cioc_id}/{a.baseplate_id}/CH{a.charm_index:02d}"
+                issues.append(ValidationIssueModel(
+                    issue_id=f"VAL-ASN-{issue_idx:03d}",
+                    severity="WARNING",
+                    rule_name="Reserved Spare Capacity",
+                    affected_tags=[a.tag],
+                    affected_hardware=addr,
+                    message=f"Signal '{a.tag}' occupies CHARM position #{a.charm_index}, which falls within the {self.config.spare_percentage}% reserved engineering spare threshold.",
+                    suggested_action="Move signal to an unreserved CHARM slot or expand cabinet hardware count.",
+                    blocks_approval=False
+                ))
+                issue_idx += 1
+
+        # Check: A/B Redundancy CIOC Separation
+        # CRITICAL RULE: Redundant A and B signals in same unit/equipment must NOT be on same CIOC
+        if self.rules.enforce_ab_redundancy_separation:
+            # Map: group_key -> {'A': [(tag, cab, cioc)], 'B': [(tag, cab, cioc)]}
+            red_placements: Dict[str, Dict[str, List[Tuple[str, str, str]]]] = {}
+            for a in assignments:
+                if a.status == "Allocated" and a.redundancy in ["A", "B"] and a.cabinet_id and a.cioc_id:
+                    r_key = a.logical_group or (a.tag.split("-")[0] if "-" in a.tag else "GLOBAL")
+                    if r_key not in red_placements:
+                        red_placements[r_key] = {"A": [], "B": []}
+                    red_placements[r_key][a.redundancy].append((a.tag, a.cabinet_id, a.cioc_id))
+
+            for r_key, channels in red_placements.items():
+                a_list = channels["A"]
+                b_list = channels["B"]
+                for a_tag, a_cab, a_cioc in a_list:
+                    for b_tag, b_cab, b_cioc in b_list:
+                        # Violation if same cabinet AND same CIOC
+                        if a_cab == b_cab and a_cioc == b_cioc:
+                            issues.append(ValidationIssueModel(
+                                issue_id=f"VAL-ASN-{issue_idx:03d}",
+                                severity="ERROR",
+                                rule_name="Redundancy Segregation (A/B)",
+                                affected_tags=[a_tag, b_tag],
+                                affected_hardware=f"{a_cab}/{a_cioc}",
+                                message=f"Redundancy violation: Primary signal '{a_tag}' [Channel A] and Standby signal '{b_tag}' [Channel B] share the same controller I/O card ({a_cab}/{a_cioc}). A single card failure will disable both channels.",
+                                suggested_action=f"Relocate one redundant channel to an alternate CIOC in {a_cab} or a separate cabinet.",
+                                blocks_approval=True
+                            ))
+                            issue_idx += 1
+
+        # Check: Multi-pair Cable Grouping & Pair Order
+        cables: Dict[str, List[AssignmentModel]] = {}
+        for a in assignments:
+            if a.status == "Allocated" and a.cable_id and a.cable_id.strip():
+                c_id = a.cable_id.strip()
+                if c_id not in cables:
+                    cables[c_id] = []
+                cables[c_id].append(a)
+
+        if self.rules.enforce_pair_order:
+            for c_id, cable_assignments in cables.items():
+                if len(cable_assignments) > 1:
+                    # Sort by pair number
+                    with_pair = [a for a in cable_assignments if a.pair_number is not None]
+                    with_pair.sort(key=lambda x: x.pair_number)
+                    for k in range(len(with_pair) - 1):
+                        a1 = with_pair[k]
+                        a2 = with_pair[k + 1]
+                        # If on same baseplate, pair order should match charm order
+                        if a1.cabinet_id == a2.cabinet_id and a1.cioc_id == a2.cioc_id and a1.baseplate_id == a2.baseplate_id:
+                            if a1.pair_number < a2.pair_number and a1.charm_index >= a2.charm_index:
+                                issues.append(ValidationIssueModel(
+                                    issue_id=f"VAL-ASN-{issue_idx:03d}",
+                                    severity="WARNING",
+                                    rule_name="Cable Pair Sequence",
+                                    affected_tags=[a1.tag, a2.tag],
+                                    affected_hardware=f"{a1.cabinet_id}/{a1.cioc_id}/{a1.baseplate_id}",
+                                    message=f"Cable '{c_id}' pair #{a1.pair_number} (CH{a1.charm_index:02d}) and pair #{a2.pair_number} (CH{a2.charm_index:02d}) violate sequential pair ordering on baseplate {a1.baseplate_id}.",
+                                    suggested_action="Reorder CHARM positions to match field cable wire-pair numbering.",
+                                    blocks_approval=False
+                                ))
+                                issue_idx += 1
+
+        return issues
+
     def validate(
         self,
         signals: List[SignalRecord],
         assignments: List[AssignmentModel]
     ) -> ValidationSummaryModel:
-        issues: List[ValidationIssueModel] = []
-        issue_counter = 1
+        """
+        Runs comprehensive, multi-phase independent validation.
+        """
+        input_issues = self.validate_input_dataset(signals)
+        assignment_issues = self.validate_assignments(signals, assignments)
 
-        def add_issue(severity: str, rule_name: str, tags: List[str], hw: Optional[str], message: str, action: str, blocks: bool):
-            nonlocal issue_counter
-            prefix = "ERR" if severity == "ERROR" else ("WRN" if severity == "WARNING" else "INF")
-            issue_id = f"VAL-{prefix}-{issue_counter:03d}"
-            issue_counter += 1
-            issues.append(ValidationIssueModel(
-                issue_id=issue_id,
-                severity=severity,
-                rule_name=rule_name,
-                affected_tags=tags,
-                affected_hardware=hw,
-                message=message,
-                suggested_action=action,
-                blocks_approval=blocks
-            ))
+        all_issues = input_issues + assignment_issues
 
-        # Build quick lookups
-        signal_by_tag: Dict[str, SignalRecord] = {s.tag: s for s in signals if s.tag}
-        tag_counts: Dict[str, int] = {}
-        for s in signals:
-            tag_counts[s.tag] = tag_counts.get(s.tag, 0) + 1
+        allocated = len([a for a in assignments if a.status == "Allocated"])
+        unallocated = len(assignments) - allocated
 
-        # Check 1: Duplicate signal tags in imported dataset
-        for tag, count in tag_counts.items():
-            if count > 1:
-                add_issue(
-                    severity="ERROR",
-                    rule_name="Unique Signal Tagging",
-                    tags=[tag],
-                    hw=None,
-                    message=f"Signal Tag '{tag}' appears {count} times in the imported IO database. Industrial DCS requires globally unique signal tags.",
-                    action="Deduplicate signal tags in customer IO list or add suffix (_A, _B, _1, _2).",
-                    blocks=True
-                )
+        errors = len([i for i in all_issues if i.severity == "ERROR"])
+        warnings = len([i for i in all_issues if i.severity == "WARNING"])
+        infos = len([i for i in all_issues if i.severity == "INFO"])
 
-        # Check 2: Missing mandatory fields
-        for s in signals:
-            if not s.tag or not s.tag.strip():
-                add_issue(
-                    severity="ERROR",
-                    rule_name="Mandatory Field Completeness",
-                    tags=["UNKNOWN"],
-                    hw=None,
-                    message="Signal record has missing or empty Tag name.",
-                    action="Provide a valid instrument or DCS tag name.",
-                    blocks=True
-                )
-            if not s.signal_type or not s.signal_type.strip():
-                add_issue(
-                    severity="ERROR",
-                    rule_name="Mandatory Field Completeness",
-                    tags=[s.tag],
-                    hw=None,
-                    message=f"Signal '{s.tag}' has no signal type specified (e.g. AI, AO, DI, DO).",
-                    action="Assign valid signal type in the IO list mapping.",
-                    blocks=True
-                )
-
-        # Check 3: Unsupported signal types against catalogue
-        for s in signals:
-            sig_type = (s.signal_type or "").upper().strip()
-            if sig_type and sig_type not in self.compat_matrix:
-                add_issue(
-                    severity="ERROR",
-                    rule_name="Hardware Type Compatibility",
-                    tags=[s.tag],
-                    hw=None,
-                    message=f"Signal '{s.tag}' type '{s.signal_type}' is not supported by DeltaV hardware catalogue.",
-                    action="Update hardware catalogue compatibility matrix in Rules & Hardware page or correct IO type in source list.",
-                    blocks=True
-                )
-
-        # Check 4: Unallocated signals
-        unallocated = [a for a in assignments if a.status != "Allocated"]
-        for ua in unallocated:
-            add_issue(
-                severity="ERROR" if ua.status == "Blocked" else "WARNING",
-                rule_name="Complete Hardware Allocation",
-                tags=[ua.tag],
-                hw=None,
-                message=f"Signal '{ua.tag}' is currently unallocated (Status: {ua.status}). Reason: {ua.reason or 'Unassigned'}",
-                action="Increase cabinet/baseplate capacity or resolve conflicting engineering constraints.",
-                blocks=(ua.status == "Blocked")
-            )
-
-        # Check 5: Slot Capacity & Double Occupancy
-        slot_occupancy: Dict[str, List[str]] = {}
-        for a in assignments:
-            if a.status == "Allocated" and a.cabinet_id and a.cioc_id and a.baseplate_id and a.charm_index:
-                addr = f"{a.cabinet_id}/{a.cioc_id}/{a.baseplate_id}/CH{a.charm_index:02d}"
-                if addr not in slot_occupancy:
-                    slot_occupancy[addr] = []
-                slot_occupancy[addr].append(a.tag)
-
-                # Check if charm index exceeds baseplate limit
-                if a.charm_index > self.config.charms_per_baseplate or a.charm_index < 1:
-                    add_issue(
-                        severity="ERROR",
-                        rule_name="CHARM Slot Capacity Bounds",
-                        tags=[a.tag],
-                        hw=addr,
-                        message=f"Signal '{a.tag}' assigned to invalid CHARM slot #{a.charm_index}. Baseplate limit is {self.config.charms_per_baseplate} CHARMs.",
-                        action=f"Reassign to valid slot between 1 and {self.config.charms_per_baseplate}.",
-                        blocks=True
-                    )
-
-        for addr, tags in slot_occupancy.items():
-            if len(tags) > 1:
-                add_issue(
-                    severity="ERROR",
-                    rule_name="Hardware Slot Single Occupancy",
-                    tags=tags,
-                    hw=addr,
-                    message=f"Hardware position {addr} has multiple signals allocated simultaneously: {', '.join(tags)}. Each CHARM accepts only 1 signal.",
-                    action="Reallocate conflicting signals to free distinct CHARM slots.",
-                    blocks=True
-                )
-
-        # Check 6: Reserved Spare Capacity Encroachment
-        spare_slots_per_bp = max(1, int(math.ceil(self.config.charms_per_baseplate * (self.config.spare_percentage / 100.0)))) if self.config.spare_percentage > 0 else 0
-        spare_threshold = self.config.charms_per_baseplate - spare_slots_per_bp
-        for a in assignments:
-            if a.status == "Allocated" and a.charm_index and a.charm_index > spare_threshold and spare_slots_per_bp > 0:
-                addr = f"{a.cabinet_id}/{a.cioc_id}/{a.baseplate_id}/CH{a.charm_index:02d}"
-                add_issue(
-                    severity="WARNING",
-                    rule_name="Reserved Spare Capacity",
-                    tags=[a.tag],
-                    hw=addr,
-                    message=f"Signal '{a.tag}' occupies CHARM position #{a.charm_index}, which falls within the {self.config.spare_percentage}% reserved engineering spare threshold.",
-                    action="Move signal to an unreserved CHARM slot or expand cabinet hardware count.",
-                    blocks=False
-                )
-
-        # Check 7: A/B Redundancy CIOC Separation
-        # Group allocated signals by redundancy key
-        redundancy_groups: Dict[str, Dict[str, List[AssignmentModel]]] = {}
-        for a in assignments:
-            if a.status == "Allocated" and a.redundancy in ["A", "B"] and a.cioc_id:
-                r_key = a.logical_group or (a.tag.split("-")[0] if "-" in a.tag else "GLOBAL")
-                if r_key not in redundancy_groups:
-                    redundancy_groups[r_key] = {"A": [], "B": []}
-                redundancy_groups[r_key][a.redundancy].append(a)
-
-        if self.rules.enforce_ab_redundancy_separation:
-            for r_key, pair in redundancy_groups.items():
-                a_list = pair["A"]
-                b_list = pair["B"]
-                for sig_a in a_list:
-                    for sig_b in b_list:
-                        if sig_a.cabinet_id == sig_b.cabinet_id and sig_a.cioc_id == sig_b.cioc_id:
-                            add_issue(
-                                severity="ERROR",
-                                rule_name="A/B Redundancy CIOC Separation",
-                                tags=[sig_a.tag, sig_b.tag],
-                                hw=f"{sig_a.cabinet_id}/{sig_a.cioc_id}",
-                                message=f"Redundant pair '{sig_a.tag}' (A) and '{sig_b.tag}' (B) in group '{r_key}' are assigned to the same CIOC ({sig_a.cioc_id}). This violates single-point-of-failure segregation.",
-                                action=f"Separate redundant channel '{sig_b.tag}' to an alternate CIOC.",
-                                blocks=True
-                            )
-
-        # Check 8: Cable Continuity and Pair Ordering
-        # Group by cable_id
-        cables_map: Dict[str, List[AssignmentModel]] = {}
-        for a in assignments:
-            if a.status == "Allocated" and a.cable_id and a.cable_id.strip():
-                if a.cable_id not in cables_map:
-                    cables_map[a.cable_id] = []
-                cables_map[a.cable_id].append(a)
-
-        for cable_id, cable_sigs in cables_map.items():
-            # Check if pairs span multiple cabinets
-            cabs = set(cs.cabinet_id for cs in cable_sigs if cs.cabinet_id)
-            if len(cabs) > 1 and not self.rules.allow_cross_baseplate_cables:
-                add_issue(
-                    severity="WARNING",
-                    rule_name="Cable Group Continuity",
-                    tags=[cs.tag for cs in cable_sigs],
-                    hw=", ".join(cabs),
-                    message=f"Cable '{cable_id}' pairs are split across multiple cabinets ({', '.join(cabs)}). Multi-core field cables should land in a single enclosure.",
-                    action=f"Consolidate all pairs of cable {cable_id} into the same cabinet.",
-                    blocks=False
-                )
-
-            # Check pair order if multiple pairs have valid pair_number
-            sorted_by_pair = sorted([cs for cs in cable_sigs if cs.pair_number is not None], key=lambda x: x.pair_number)
-            if len(sorted_by_pair) > 1 and self.rules.enforce_pair_order:
-                # check if charm indices on same baseplate are ascending
-                for i in range(len(sorted_by_pair) - 1):
-                    s1 = sorted_by_pair[i]
-                    s2 = sorted_by_pair[i+1]
-                    if s1.cabinet_id == s2.cabinet_id and s1.cioc_id == s2.cioc_id and s1.baseplate_id == s2.baseplate_id:
-                        if s1.charm_index and s2.charm_index and s1.charm_index > s2.charm_index:
-                            add_issue(
-                                severity="WARNING",
-                                rule_name="Cable Pair Ascending Order",
-                                tags=[s1.tag, s2.tag],
-                                hw=f"{s1.cabinet_id}/{s1.cioc_id}/{s1.baseplate_id}",
-                                message=f"Cable '{cable_id}' Pair {s1.pair_number} (CH{s1.charm_index}) is placed after Pair {s2.pair_number} (CH{s2.charm_index}). Field wiring standards require monotonic pair progression.",
-                                action="Swap CHARM slots to preserve field cable pair sequence.",
-                                blocks=False
-                            )
-
-        # Check 9: CHARM & Terminal Block Electrical Compatibility
-        for a in assignments:
-            if a.status == "Allocated" and a.signal_type:
-                sig_type = a.signal_type.upper().strip()
-                if sig_type in self.compat_matrix:
-                    req_charm = self.compat_matrix[sig_type].get("charm")
-                    req_term = self.compat_matrix[sig_type].get("terminal")
-                    if req_charm and a.charm_type and req_charm.lower() not in a.charm_type.lower():
-                        add_issue(
-                            severity="ERROR",
-                            rule_name="CHARM Hardware Compatibility",
-                            tags=[a.tag],
-                            hw=f"{a.cabinet_id}/{a.cioc_id}/{a.baseplate_id}/CH{a.charm_index}",
-                            message=f"Signal '{a.tag}' ({sig_type}) assigned to mismatched CHARM type '{a.charm_type}'. Required: '{req_charm}'.",
-                            action="Install required CHARM type in hardware configuration.",
-                            blocks=True
-                        )
-                    if req_term and a.terminal_block and req_term.lower() not in a.terminal_block.lower():
-                        add_issue(
-                            severity="WARNING",
-                            rule_name="Terminal Block Compatibility",
-                            tags=[a.tag],
-                            hw=f"{a.cabinet_id}/{a.cioc_id}/{a.baseplate_id}/CH{a.charm_index}",
-                            message=f"Signal '{a.tag}' ({sig_type}) requires '{req_term}' but assigned '{a.terminal_block}'.",
-                            action="Verify field termination requirements for injected power or isolation.",
-                            blocks=False
-                        )
-
-        # Summarize
-        err_count = len([i for i in issues if i.severity == "ERROR"])
-        wrn_count = len([i for i in issues if i.severity == "WARNING"])
-        inf_count = len([i for i in issues if i.severity == "INFO"])
-        alloc_count = len([a for a in assignments if a.status == "Allocated"])
-        unalloc_count = len(assignments) - alloc_count
+        # Fully validated iff no blocking errors
+        is_fully_validated = (errors == 0 and unallocated == 0)
 
         return ValidationSummaryModel(
             total_signals=len(signals),
-            allocated_count=alloc_count,
-            unallocated_count=unalloc_count,
-            error_count=err_count,
-            warning_count=wrn_count,
-            info_count=inf_count,
-            is_fully_validated=(err_count == 0 and unalloc_count == 0),
-            issues=issues
+            allocated_count=allocated,
+            unallocated_count=unallocated,
+            error_count=errors,
+            warning_count=warnings,
+            info_count=infos,
+            is_fully_validated=is_fully_validated,
+            issues=all_issues
         )

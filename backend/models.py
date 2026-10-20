@@ -285,3 +285,42 @@ class AuditLogModel(BaseModel):
     new_value: Optional[str] = None
     user_name: str
     created_at: str
+
+
+# --- Solver & Approval Gate Models ---
+class SolverDiagnostics(BaseModel):
+    solver_name: str = "Google OR-Tools CP-SAT"
+    solver_status: str  # OPTIMAL, FEASIBLE, INFEASIBLE, MODEL_INVALID, UNKNOWN
+    is_optimal: bool = False
+    solve_time_seconds: float = 0.0
+    objective_value: Optional[float] = None
+    num_decision_variables: int = 0
+    num_constraints: int = 0
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+class AllocationRunResult(BaseModel):
+    message: str
+    total_signals: int
+    allocated_count: int
+    unallocated_count: int
+    validation_errors: int
+    validation_warnings: int
+    is_fully_validated: bool
+    approval_eligible: bool
+    diagnostics: SolverDiagnostics
+
+class ApprovalRequest(BaseModel):
+    project_id: int
+    revision_id: int
+    reviewer_name: str = "Lead DCS Engineer"
+    notes: Optional[str] = ""
+
+class ApprovalResponse(BaseModel):
+    project_id: int
+    revision_id: int
+    is_approved: bool
+    approval_status: str  # Approved, Rejected, Pending Validation
+    approval_timestamp: Optional[str] = None
+    blocking_issues_count: int = 0
+    blocking_reasons: List[str] = Field(default_factory=list)
+    validator_summary: Optional[Dict[str, Any]] = None

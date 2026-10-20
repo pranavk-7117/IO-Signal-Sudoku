@@ -185,6 +185,20 @@ export const api = {
     return res.json();
   },
 
+  approveAllocation: async (projectId: number, revisionId: number, reviewerName: string = 'Lead DCS Engineer', notes?: string) => {
+    const res = await fetch(`${API_BASE}/allocation/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        project_id: projectId,
+        revision_id: revisionId,
+        reviewer_name: reviewerName,
+        notes: notes || ''
+      })
+    });
+    return res.json();
+  },
+
   // Validation & TQs
   getValidationSummary: async (projectId: number, revisionId: number): Promise<ValidationSummary> => {
     const res = await fetch(`${API_BASE}/validation/summary?project_id=${projectId}&revision_id=${revisionId}`);

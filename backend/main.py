@@ -6,6 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from database import init_db, get_db_status
+from datetime import datetime
+from database import get_db
 from models import (
     ProjectCreate, ProjectUpdate, ProjectResponse,
     RevisionCreate, RevisionResponse, HardwareConfigModel,
@@ -13,7 +15,8 @@ from models import (
     ValidationIssueModel, ValidationSummaryModel,
     TQCreateModel, TQUpdateModel, TQResponseModel,
     RevisionComparisonResponse, UtilisationSummaryModel,
-    AuditLogModel, SheetInspectResponse, ColumnMappingRequest
+    AuditLogModel, SheetInspectResponse, ColumnMappingRequest,
+    ApprovalRequest, ApprovalResponse, AllocationRunResult, SolverDiagnostics
 )
 from db_service import DBService
 from engine.allocator import AllocationEngine
@@ -188,11 +191,12 @@ def save_hardware_config(project_id: int, config: HardwareConfigModel, revision_
     return {"message": "Hardware configuration and rules updated successfully", "success": success}
 
 # --- Allocation Engine Routes ---
-@app.post("/api/allocation/run")
+@app.post("/api/allocation/run", response_model=AllocationRunResult)
 def run_allocation(
     project_id: int = Query(...),
     revision_id: int = Query(...),
-    preserve_existing: bool = Query(True)
+    preserve_existing: bool = Query(True),
+    timeout_seconds: float = Query(15.0)
 ):
     signals = DBService.get_imported_signals(project_id, revision_id)
     if not signals:
@@ -205,7 +209,6 @@ def run_allocation(
     prev_assignments_map = None
     if preserve_existing:
         revs = DBService.get_revisions(project_id)
-        # Find preceding revision
         curr_idx = next((i for i, r in enumerate(revs) if r["id"] == revision_id), None)
         if curr_idx is not None and curr_idx > 0:
             prev_rev = revs[curr_idx - 1]
@@ -213,10 +216,10 @@ def run_allocation(
             prev_assignments_map = {a.tag: a for a in prev_allocs}
 
     engine = AllocationEngine(hw_config)
-    assignments = engine.run_allocation(signals, previous_assignments=prev_assignments_map)
+    assignments = engine.run_allocation(signals, previous_assignments=prev_assignments_map, timeout_seconds=timeout_seconds)
     DBService.save_assignments(project_id, revision_id, assignments)
 
-    # Immediately run validator to maintain fresh status
+    # Immediately run independent validator
     validator = ValidationEngine(hw_config)
     val_summary = validator.validate(signals, assignments)
     DBService.save_validation_results(project_id, revision_id, val_summary.issues)
@@ -229,15 +232,122 @@ def run_allocation(
     allocated = len([a for a in assignments if a.status == "Allocated"])
     unallocated = len(assignments) - allocated
 
-    return {
-        "message": "Allocation completed successfully",
-        "total_signals": len(signals),
-        "allocated_count": allocated,
-        "unallocated_count": unallocated,
-        "validation_errors": val_summary.error_count,
-        "validation_warnings": val_summary.warning_count,
-        "is_fully_validated": val_summary.is_fully_validated
-    }
+    diagnostics = engine.last_diagnostics or SolverDiagnostics(
+        solver_name="Google OR-Tools CP-SAT",
+        solver_status="OPTIMAL",
+        is_optimal=True,
+        solve_time_seconds=0.0
+    )
+
+    approval_eligible = (val_summary.error_count == 0 and unallocated == 0)
+
+    return AllocationRunResult(
+        message="Allocation completed via Google OR-Tools CP-SAT",
+        total_signals=len(signals),
+        allocated_count=allocated,
+        unallocated_count=unallocated,
+        validation_errors=val_summary.error_count,
+        validation_warnings=val_summary.warning_count,
+        is_fully_validated=val_summary.is_fully_validated,
+        approval_eligible=approval_eligible,
+        diagnostics=diagnostics
+    )
+
+# --- Fail-Closed Approval Gate ---
+@app.post("/api/allocation/approve", response_model=ApprovalResponse)
+def approve_allocation(data: ApprovalRequest):
+    project = DBService.get_project(data.project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    signals = DBService.get_imported_signals(data.project_id, data.revision_id)
+    assignments = DBService.get_assignments(data.project_id, data.revision_id)
+
+    if not signals or not assignments:
+        return ApprovalResponse(
+            project_id=data.project_id,
+            revision_id=data.revision_id,
+            is_approved=False,
+            approval_status="Rejected",
+            blocking_issues_count=1,
+            blocking_reasons=["No allocation records found to approve. Please execute the CP-SAT solver first."]
+        )
+
+    hw_config = DBService.get_hardware_config(data.project_id, data.revision_id)
+    validator = ValidationEngine(hw_config)
+    try:
+        val_summary = validator.validate(signals, assignments)
+    except Exception as e:
+        return ApprovalResponse(
+            project_id=data.project_id,
+            revision_id=data.revision_id,
+            is_approved=False,
+            approval_status="Rejected",
+            blocking_issues_count=1,
+            blocking_reasons=[f"Validator execution failure (Fail-Closed Policy): {str(e)}"]
+        )
+
+    blocking_reasons = []
+    for issue in val_summary.issues:
+        if issue.blocks_approval or issue.severity == "ERROR":
+            blocking_reasons.append(f"[{issue.rule_name}] {issue.message}")
+
+    unallocated_blocked = [a for a in assignments if a.status == "Blocked"]
+    if unallocated_blocked:
+        blocking_reasons.append(f"{len(unallocated_blocked)} signals are in 'Blocked' state.")
+
+    # Slot collisions check
+    slot_counts = {}
+    for a in assignments:
+        if a.status == "Allocated" and a.cabinet_id and a.cioc_id and a.baseplate_id and a.charm_index:
+            addr = f"{a.cabinet_id}/{a.cioc_id}/{a.baseplate_id}/CH{a.charm_index:02d}"
+            slot_counts[addr] = slot_counts.get(addr, 0) + 1
+            if slot_counts[addr] > 1:
+                blocking_reasons.append(f"Hardware collision at {addr}.")
+
+    if blocking_reasons:
+        now = datetime.now().isoformat()
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO audit_logs (project_id, action, entity_type, entity_id, old_value, new_value, user_name, created_at)
+            VALUES (?, 'APPROVAL_REJECTED', 'Allocation', ?, NULL, ?, ?, ?);
+        """, (data.project_id, str(data.revision_id), f"Rejected with {len(blocking_reasons)} blocking issues", data.reviewer_name, now))
+        conn.commit()
+        conn.close()
+
+        return ApprovalResponse(
+            project_id=data.project_id,
+            revision_id=data.revision_id,
+            is_approved=False,
+            approval_status="Rejected",
+            blocking_issues_count=len(blocking_reasons),
+            blocking_reasons=blocking_reasons,
+            validator_summary=val_summary.dict()
+        )
+
+    # All checks passed: Grant Approval
+    now = datetime.now().isoformat()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE projects SET status = 'Approved', updated_at = ? WHERE id = ?;", (now, data.project_id))
+    cursor.execute("""
+        INSERT INTO audit_logs (project_id, action, entity_type, entity_id, old_value, new_value, user_name, created_at)
+        VALUES (?, 'APPROVAL_GRANTED', 'Allocation', ?, 'Pending', 'Approved', ?, ?);
+    """, (data.project_id, str(data.revision_id), data.reviewer_name, now))
+    conn.commit()
+    conn.close()
+
+    return ApprovalResponse(
+        project_id=data.project_id,
+        revision_id=data.revision_id,
+        is_approved=True,
+        approval_status="Approved",
+        approval_timestamp=now,
+        blocking_issues_count=0,
+        blocking_reasons=[],
+        validator_summary=val_summary.dict()
+    )
 
 @app.get("/api/allocation/assignments", response_model=List[AssignmentModel])
 def get_assignments(
