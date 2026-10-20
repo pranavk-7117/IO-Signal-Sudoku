@@ -4,10 +4,18 @@ import os
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
-DB_DIR = os.path.join(os.path.dirname(__file__), "data")
-DB_PATH = os.path.join(DB_DIR, "io_sudoku.db")
+if os.environ.get("VERCEL"):
+    DB_DIR = "/tmp/data"
+else:
+    DB_DIR = os.path.join(os.path.dirname(__file__), "data")
 
-os.makedirs(DB_DIR, exist_ok=True)
+try:
+    os.makedirs(DB_DIR, exist_ok=True)
+except Exception:
+    DB_DIR = "/tmp/data"
+    os.makedirs(DB_DIR, exist_ok=True)
+
+DB_PATH = os.path.join(DB_DIR, "io_sudoku.db")
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)

@@ -11,8 +11,27 @@ from engine.allocator import AllocationEngine
 from engine.validator import ValidationEngine
 from engine.tq_generator import TQGenerator
 
-SAMPLE_DIR = os.path.join(os.path.dirname(__file__), "sample_files")
-os.makedirs(SAMPLE_DIR, exist_ok=True)
+ORIG_SAMPLE_DIR = os.path.join(os.path.dirname(__file__), "sample_files")
+if os.environ.get("VERCEL"):
+    SAMPLE_DIR = "/tmp/sample_files"
+    try:
+        os.makedirs(SAMPLE_DIR, exist_ok=True)
+        if os.path.exists(ORIG_SAMPLE_DIR):
+            import shutil
+            for f in os.listdir(ORIG_SAMPLE_DIR):
+                src_f = os.path.join(ORIG_SAMPLE_DIR, f)
+                dst_f = os.path.join(SAMPLE_DIR, f)
+                if not os.path.exists(dst_f):
+                    shutil.copy2(src_f, dst_f)
+    except Exception:
+        pass
+else:
+    SAMPLE_DIR = ORIG_SAMPLE_DIR
+    try:
+        os.makedirs(SAMPLE_DIR, exist_ok=True)
+    except Exception:
+        SAMPLE_DIR = "/tmp/sample_files"
+        os.makedirs(SAMPLE_DIR, exist_ok=True)
 
 def create_sample_excel_files():
     """Generates synthetic customer IO workbooks and output template."""

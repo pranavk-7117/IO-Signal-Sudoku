@@ -24,8 +24,16 @@ from engine.excel_handler import ExcelHandler, REPORT_OUTPUT_DIR
 from engine.revision_comparator import RevisionComparator
 from demo_data import seed_demo_project, SAMPLE_DIR
 
-UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "data", "uploads")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+if os.environ.get("VERCEL"):
+    UPLOAD_DIR = "/tmp/uploads"
+else:
+    UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "data", "uploads")
+
+try:
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+except Exception:
+    UPLOAD_DIR = "/tmp/uploads"
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = FastAPI(
     title="IO Signal Sudoku — Industrial IO Signal Allocation Platform",

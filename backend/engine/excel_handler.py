@@ -9,8 +9,16 @@ from models import (
     TQResponseModel, UtilisationSummaryModel, RevisionComparisonResponse
 )
 
-REPORT_OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "reports")
-os.makedirs(REPORT_OUTPUT_DIR, exist_ok=True)
+if os.environ.get("VERCEL"):
+    REPORT_OUTPUT_DIR = "/tmp/reports"
+else:
+    REPORT_OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "reports")
+
+try:
+    os.makedirs(REPORT_OUTPUT_DIR, exist_ok=True)
+except Exception:
+    REPORT_OUTPUT_DIR = "/tmp/reports"
+    os.makedirs(REPORT_OUTPUT_DIR, exist_ok=True)
 
 class ExcelHandler:
     @staticmethod
