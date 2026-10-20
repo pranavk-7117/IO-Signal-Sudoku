@@ -323,7 +323,7 @@ def approve_allocation(data: ApprovalRequest):
             approval_status="Rejected",
             blocking_issues_count=len(blocking_reasons),
             blocking_reasons=blocking_reasons,
-            validator_summary=val_summary.dict()
+            validator_summary=val_summary.model_dump()
         )
 
     # All checks passed: Grant Approval
@@ -346,7 +346,7 @@ def approve_allocation(data: ApprovalRequest):
         approval_timestamp=now,
         blocking_issues_count=0,
         blocking_reasons=[],
-        validator_summary=val_summary.dict()
+        validator_summary=val_summary.model_dump()
     )
 
 @app.get("/api/allocation/assignments", response_model=List[AssignmentModel])
