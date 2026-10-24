@@ -24,7 +24,11 @@
     "params": {
       "container_level": "cioc",
       "redundancy_key_column": "redundancy",
-      "group_key_columns": ["logical_group", "loop_name", "unit"]
+      "group_key_columns": [
+        "logical_group",
+        "loop_name",
+        "unit"
+      ]
     }
   },
   {
@@ -101,10 +105,29 @@
     "scope": "signal",
     "params": {
       "conditions": [
-        {"column": "signal_type", "operator": "in", "values": ["RTD", "AIR-RTD"]},
-        {"column": "electrical_spec", "operator": "contains", "value": "rtd"},
-        {"column": "signal_level", "operator": "contains", "value": "3-wire"},
-        {"column": "description", "operator": "contains", "value": "rtd"}
+        {
+          "column": "signal_type",
+          "operator": "in",
+          "values": [
+            "RTD",
+            "AIR-RTD"
+          ]
+        },
+        {
+          "column": "electrical_spec",
+          "operator": "contains",
+          "value": "rtd"
+        },
+        {
+          "column": "signal_level",
+          "operator": "contains",
+          "value": "3-wire"
+        },
+        {
+          "column": "description",
+          "operator": "regex",
+          "pattern": "\\\\brtd\\\\b|\\\\bpt100\\\\b"
+        }
       ],
       "match_mode": "any",
       "hardware": {
@@ -113,6 +136,16 @@
         "terminal_block": "Standard CHARM Terminal Block",
         "charm_tb_part_no": "SE4501",
         "charm_tb_terminals": "1, 2, 4"
+      },
+      "type_check": {
+        "column": "signal_type",
+        "operator": "in",
+        "values": [
+          "AI",
+          "AIR",
+          "RTD",
+          "AIR-RTD"
+        ]
       }
     }
   },
@@ -126,10 +159,26 @@
     "scope": "signal",
     "params": {
       "conditions": [
-        {"column": "signal_level", "operator": "contains", "value": "4-wire"},
-        {"column": "external_power", "operator": "contains", "value": "230vac"},
-        {"column": "external_power", "operator": "contains", "value": "110vac"},
-        {"column": "electrical_spec", "operator": "contains", "value": "4wire"}
+        {
+          "column": "signal_level",
+          "operator": "contains",
+          "value": "4-wire"
+        },
+        {
+          "column": "external_power",
+          "operator": "contains",
+          "value": "230vac"
+        },
+        {
+          "column": "external_power",
+          "operator": "contains",
+          "value": "110vac"
+        },
+        {
+          "column": "electrical_spec",
+          "operator": "contains",
+          "value": "4wire"
+        }
       ],
       "match_mode": "any",
       "hardware": {
@@ -150,13 +199,49 @@
     "weight": 100,
     "scope": "signal",
     "params": {
-      "type_check": {"column": "signal_type", "operator": "in", "values": ["DO", "DOR", "DO-SOV", "DOR-SOV"]},
+      "type_check": {
+        "column": "signal_type",
+        "operator": "in",
+        "values": [
+          "DO",
+          "DOR",
+          "DO-SOV",
+          "DOR-SOV"
+        ]
+      },
       "conditions": [
-        {"column": "instrument_type", "operator": "in", "values": ["XYV", "ZYV", "SOV"]},
-        {"column": "tag", "operator": "regex", "pattern": ".*(XYV|ZYV|SOV).*"},
-        {"column": "description", "operator": "contains", "value": "solenoid"},
-        {"column": "description", "operator": "contains", "value": "sov"},
-        {"column": "signal_type", "operator": "in", "values": ["DO-SOV", "DOR-SOV"]}
+        {
+          "column": "instrument_type",
+          "operator": "in",
+          "values": [
+            "XYV",
+            "ZYV",
+            "SOV"
+          ]
+        },
+        {
+          "column": "tag",
+          "operator": "regex",
+          "pattern": ".*(XYV|ZYV|SOV).*"
+        },
+        {
+          "column": "description",
+          "operator": "contains",
+          "value": "solenoid"
+        },
+        {
+          "column": "description",
+          "operator": "contains",
+          "value": "sov"
+        },
+        {
+          "column": "signal_type",
+          "operator": "in",
+          "values": [
+            "DO-SOV",
+            "DOR-SOV"
+          ]
+        }
       ],
       "match_mode": "any",
       "hardware": {
@@ -177,11 +262,33 @@
     "weight": 100,
     "scope": "signal",
     "params": {
-      "type_check": {"column": "signal_type", "operator": "in", "values": ["DO", "DOR"]},
+      "type_check": {
+        "column": "signal_type",
+        "operator": "in",
+        "values": [
+          "DO",
+          "DOR"
+        ]
+      },
       "conditions": [
-        {"column": "instrument_type", "operator": "in", "values": ["XR", "MR"]},
-        {"column": "signal_level", "operator": "contains", "value": "relay"},
-        {"column": "description", "operator": "contains", "value": "relay"}
+        {
+          "column": "instrument_type",
+          "operator": "in",
+          "values": [
+            "XR",
+            "MR"
+          ]
+        },
+        {
+          "column": "signal_level",
+          "operator": "contains",
+          "value": "relay"
+        },
+        {
+          "column": "description",
+          "operator": "contains",
+          "value": "relay"
+        }
       ],
       "match_mode": "any",
       "hardware": {
@@ -203,7 +310,14 @@
     "scope": "signal",
     "params": {
       "conditions": [
-        {"column": "signal_type", "operator": "in", "values": ["DO", "DOR"]}
+        {
+          "column": "signal_type",
+          "operator": "in",
+          "values": [
+            "DO",
+            "DOR"
+          ]
+        }
       ],
       "match_mode": "any",
       "hardware": {
@@ -225,7 +339,14 @@
     "scope": "signal",
     "params": {
       "conditions": [
-        {"column": "signal_type", "operator": "in", "values": ["DI", "DIR"]}
+        {
+          "column": "signal_type",
+          "operator": "in",
+          "values": [
+            "DI",
+            "DIR"
+          ]
+        }
       ],
       "match_mode": "any",
       "hardware": {
@@ -247,7 +368,14 @@
     "scope": "signal",
     "params": {
       "conditions": [
-        {"column": "signal_type", "operator": "in", "values": ["AO", "AOR"]}
+        {
+          "column": "signal_type",
+          "operator": "in",
+          "values": [
+            "AO",
+            "AOR"
+          ]
+        }
       ],
       "match_mode": "any",
       "hardware": {
@@ -269,7 +397,14 @@
     "scope": "signal",
     "params": {
       "conditions": [
-        {"column": "signal_type", "operator": "in", "values": ["AI", "AIR"]}
+        {
+          "column": "signal_type",
+          "operator": "in",
+          "values": [
+            "AI",
+            "AIR"
+          ]
+        }
       ],
       "match_mode": "any",
       "hardware": {
@@ -291,7 +426,14 @@
     "scope": "signal",
     "params": {
       "conditions": [
-        {"column": "signal_type", "operator": "in", "values": ["TC", "MV"]}
+        {
+          "column": "signal_type",
+          "operator": "in",
+          "values": [
+            "TC",
+            "MV"
+          ]
+        }
       ],
       "match_mode": "any",
       "hardware": {

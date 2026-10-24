@@ -229,14 +229,18 @@ class ExcelHandler:
             pair_invalid = False
             if pair_col and pair_col in row and pd.notna(row[pair_col]):
                 pair_text = str(row[pair_col]).strip()
-                match = re.fullmatch(r"(?:pair\s*|p)?(\d+)", pair_text, flags=re.IGNORECASE)
-                if match:
-                    pair_val = int(match.group(1))
-                    if pair_val < 1:
-                        pair_val = None
-                        pair_invalid = True
+                if not pair_text or pair_text.upper() in ["-", "N/A", "NA", "NONE", "NULL", "INTERNAL WIRING", "INTERNAL-WIRING"]:
+                    pair_val = None
+                    pair_invalid = False
                 else:
-                    pair_invalid = True
+                    match = re.fullmatch(r"(?:pair\s*|p|triad\s*)?(\d+)", pair_text, flags=re.IGNORECASE)
+                    if match:
+                        pair_val = int(match.group(1))
+                        if pair_val < 1:
+                            pair_val = None
+                            pair_invalid = True
+                    else:
+                        pair_invalid = True
 
             _cfg = HardwareSystemConfig()
             raw_red = str(row[red_col]).strip() if red_col and red_col in row and pd.notna(row[red_col]) else ""
@@ -288,6 +292,18 @@ class ExcelHandler:
                     loop_nm = str(row[c]).strip()
                     break
 
+            tech_room = ""
+            for c in ["Technical Room (Signal Location 2)", "Technical Room", "Room", "Location"]:
+                if c in row and pd.notna(row[c]):
+                    tech_room = str(row[c]).strip()
+                    break
+
+            op_area = ""
+            for c in ["Design Area", "Operating Area", "Area", "Plant Area"]:
+                if c in row and pd.notna(row[c]):
+                    op_area = str(row[c]).strip()
+                    break
+
             signals.append(SignalRecord(
                 id=idx + 1,
                 tag=tag_val,
@@ -302,6 +318,8 @@ class ExcelHandler:
                 redundancy=red_val,
                 logical_group=group_val,
                 loop_name=loop_nm,
+                technical_room=tech_room,
+                operating_area=op_area,
                 is_valid=is_valid,
                 validation_errors=errors if errors else None
             ))

@@ -231,27 +231,27 @@ class IndependentValidator:
 
         # 4. Redundancy Segregation (A/B) Across Separate CIOCs
         if self.rules.enforce_ab_redundancy_separation:
-            red_placements: Dict[str, Dict[str, List[Tuple[str, str, str]]]] = {}
+            cioc_trains: Dict[Tuple[str, str], Dict[str, List[str]]] = {}
             for a in assignments:
                 red_norm = self.evaluator.normalize_redundancy(a.redundancy)
                 if a.status == "Allocated" and red_norm in ["A", "B"] and a.cabinet_id and a.cioc_id:
-                    r_key = a.logical_group or (a.tag.split("-")[0] if "-" in a.tag else "GLOBAL")
-                    if r_key not in red_placements:
-                        red_placements[r_key] = {"A": [], "B": []}
-                    red_placements[r_key][red_norm].append((a.tag, a.cabinet_id, a.cioc_id))
+                    key = (a.cabinet_id, a.cioc_id)
+                    if key not in cioc_trains:
+                        cioc_trains[key] = {"A": [], "B": []}
+                    cioc_trains[key][red_norm].append(a.tag)
 
-            for r_key, channels in red_placements.items():
-                for a_tag, a_cab, a_cioc in channels["A"]:
-                    for b_tag, b_cab, b_cioc in channels["B"]:
-                        if a_cab == b_cab and a_cioc == b_cioc:
+            for (cab, cioc), channels in cioc_trains.items():
+                if channels["A"] and channels["B"]:
+                    for a_tag in channels["A"]:
+                        for b_tag in channels["B"]:
                             issues.append(ValidationIssueModel(
                                 issue_id=f"VAL-RED-{issue_idx:03d}",
                                 severity="ERROR",
                                 rule_name="Redundancy Segregation (A/B)",
                                 affected_tags=[a_tag, b_tag],
-                                affected_hardware=f"{a_cab}/{a_cioc}",
-                                message=f"Redundancy violation: Primary signal '{a_tag}' [Channel A] and Standby signal '{b_tag}' [Channel B] share the same controller I/O card ({a_cab}/{a_cioc}). A single card failure will disable both channels.",
-                                suggested_action=f"Relocate one redundant channel to an alternate CIOC in {a_cab} or a separate cabinet.",
+                                affected_hardware=f"{cab}/{cioc}",
+                                message=f"Redundancy violation: Primary signal '{a_tag}' [Channel A] and Standby signal '{b_tag}' [Channel B] share the same controller I/O card ({cab}/{cioc}). A single card failure will disable both channels.",
+                                suggested_action=f"Relocate one redundant channel to an alternate CIOC in {cab} or a separate cabinet.",
                                 blocks_approval=True
                             ))
                             issue_idx += 1
@@ -260,7 +260,7 @@ class IndependentValidator:
         cables: Dict[str, List[AssignmentModel]] = {}
         for a in assignments:
             cid = (a.cable_id or "").strip()
-            if a.status == "Allocated" and cid and cid.upper() != "INTERNAL-WIRING" and cid != "-":
+            if a.status == "Allocated" and cid and cid.upper() not in ["INTERNAL WIRING", "INTERNAL-WIRING", "INTERNAL", "-", "NA", "N/A"]:
                 if cid not in cables:
                     cables[cid] = []
                 cables[cid].append(a)

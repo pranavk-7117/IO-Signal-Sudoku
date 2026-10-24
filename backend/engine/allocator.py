@@ -70,7 +70,12 @@ class AllocationEngine:
 
         for s in signals:
             cid = (s.cable_id or "").strip()
-            if cid and cid.upper() != "INTERNAL-WIRING" and cid.upper() != "-":
+            is_internal = (
+                not cid
+                or cid.upper() in ["INTERNAL WIRING", "INTERNAL-WIRING", "INTERNAL", "-", "NA", "N/A"]
+                or ("-EJA" in (s.tag or "") and "Internal Wiring" in (s.cable_id or ""))
+            )
+            if not is_internal:
                 if cid not in cable_groups:
                     cable_groups[cid] = []
                 cable_groups[cid].append(s)
@@ -86,14 +91,22 @@ class AllocationEngine:
 
             groups = [s.logical_group for s in sigs if s.logical_group]
             p_group = groups[0] if groups else "GLOBAL"
-            reds = [self.evaluator.normalize_redundancy(s.redundancy) for s in sigs if s.redundancy]
-            norm_red = reds[0] if reds else None
+
+            # Determine normalized redundancy: check if any signal in the cable is designated A or B
+            valid_reds = [
+                self.evaluator.normalize_redundancy(s.redundancy)
+                for s in sigs
+                if s.redundancy and self.evaluator.normalize_redundancy(s.redundancy) in ["A", "B"]
+            ]
+            norm_red = valid_reds[0] if valid_reds else None
 
             cu = CableUnit(cid, cable_size, p_group, norm_red)
             for s in sigs:
                 p_num = s.pair_number if s.pair_number and 1 <= s.pair_number <= cable_size else 1
                 while p_num in cu.signals_by_pair and p_num < cable_size:
                     p_num += 1
+                if p_num in cu.signals_by_pair:
+                    p_num = max(cu.signals_by_pair.keys(), default=0) + 1
                 cu.signals_by_pair[p_num] = s
             units.append(cu)
 
@@ -207,9 +220,18 @@ class AllocationEngine:
                 total_bp_needed += 1
 
         bp_per_cab = bp_per_cioc * ciocs_per_cab
+        spare_bp_pct = getattr(self.config, "spare_baseplate_percent", 0.0) or 0.0
+        num_empty_per_cab = max(1, round(bp_per_cab * (spare_bp_pct / 100.0))) if spare_bp_pct > 0 else 0
+        usable_bp_per_cab = max(1, bp_per_cab - num_empty_per_cab)
+        min_cabs_for_bp = math.ceil(total_bp_needed / usable_bp_per_cab)
+
+        # Multi-room support: if signals come from multiple technical rooms, ensure enough cabinets
+        distinct_rooms = len(set(s.technical_room for s in valid_signals if s.technical_room and s.technical_room != "-"))
+        min_cabs = max(min_cabs_for_bp, distinct_rooms)
+
         # Decide cabinet count
-        if auto_size_cabinets is True or (auto_size_cabinets is None and (not self.config.cabinets_count or len(valid_signals) > self.config.cabinets_count * bp_per_cab * usable_charms_per_bp)):
-            cabinets_count = max(self.config.cabinets_count, math.ceil(total_bp_needed / max(1, bp_per_cab)))
+        if auto_size_cabinets is True or (auto_size_cabinets is None and (not self.config.cabinets_count or self.config.cabinets_count < min_cabs)):
+            cabinets_count = max(self.config.cabinets_count or 1, min_cabs)
         else:
             cabinets_count = max(1, self.config.cabinets_count)
 
@@ -251,11 +273,22 @@ class AllocationEngine:
         spare_assignments: List[AssignmentModel] = []
         allocated_tags = set()
 
-        def can_place_redundancy(cab: int, cioc: int, red: Optional[str]) -> bool:
-            if not enforce_ab or not red or red not in ["A", "B"]:
+        def can_place_redundancy(cab: int, cioc: int, red: Optional[str], unit: Optional[CableUnit] = None) -> bool:
+            if not enforce_ab:
                 return True
-            opposite = "B" if red == "A" else "A"
-            return opposite not in cioc_redundancies[(cab, cioc)]
+            check_reds = set()
+            if red and red in ["A", "B"]:
+                check_reds.add(red)
+            if unit:
+                for sig_item in unit.signals_by_pair.values():
+                    sr = self.evaluator.normalize_redundancy(sig_item.redundancy)
+                    if sr in ["A", "B"]:
+                        check_reds.add(sr)
+            for r in check_reds:
+                opposite = "B" if r == "A" else "A"
+                if opposite in cioc_redundancies[(cab, cioc)]:
+                    return False
+            return True
 
         # Placement loop
         for u in sorted_units:
@@ -269,7 +302,7 @@ class AllocationEngine:
                     for ci in range(1, ciocs_per_cab + 1):
                         if placed:
                             break
-                        if not can_place_redundancy(cab, ci, u.redundancy):
+                        if not can_place_redundancy(cab, ci, u.redundancy, u):
                             continue
 
                         for bp in range(1, bp_per_cioc):
@@ -305,6 +338,10 @@ class AllocationEngine:
 
                                 if u.redundancy in ["A", "B"]:
                                     cioc_redundancies[(cab, ci)].add(u.redundancy)
+                                for sig_item in u.signals_by_pair.values():
+                                    s_red = self.evaluator.normalize_redundancy(sig_item.redundancy)
+                                    if s_red in ["A", "B"]:
+                                        cioc_redundancies[(cab, ci)].add(s_red)
                                 placed = True
                                 break
             else:
@@ -317,7 +354,7 @@ class AllocationEngine:
                     for ci in range(1, ciocs_per_cab + 1):
                         if placed:
                             break
-                        if not can_place_redundancy(cab, ci, u.redundancy):
+                        if not can_place_redundancy(cab, ci, u.redundancy, u):
                             continue
 
                         for bp in range(1, bp_per_cioc + 1):
