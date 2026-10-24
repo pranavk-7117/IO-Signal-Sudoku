@@ -1,5 +1,6 @@
 from typing import List, Dict, Any
 from models import ValidationIssueModel, AssignmentModel, SignalRecord
+from engine.priority_classifier import PriorityClassifier
 
 class TQGenerator:
     @staticmethod
@@ -11,7 +12,7 @@ class TQGenerator:
     ) -> List[Dict[str, Any]]:
         """
         Transforms blocking validation errors and unresolved allocation assignments into formal Technical Queries (TQs).
-        Avoids duplicates by generating deterministic TQ codes.
+        Avoids duplicates by generating deterministic TQ codes and assigns 3-tier industrial priorities.
         """
         generated_tqs = []
         seen_keys = set()
@@ -42,16 +43,29 @@ class TQGenerator:
                 tq_code = f"TQ-{project_id:02d}-{tq_idx:03d}"
                 tq_idx += 1
 
+                root_cause = f"Validation rule '{issue.rule_name}' failed for signal(s): {', '.join(issue.affected_tags)}."
+                p_info = PriorityClassifier.classify_tq(
+                    category=category,
+                    description=issue.message,
+                    root_cause=root_cause,
+                    suggested_action=issue.suggested_action
+                )
+
                 generated_tqs.append({
                     "tq_code": tq_code,
                     "project_id": project_id,
                     "revision_id": revision_id,
                     "category": category,
                     "description": issue.message,
-                    "root_cause": f"Validation rule '{issue.rule_name}' failed for signal(s): {', '.join(issue.affected_tags)}.",
+                    "root_cause": root_cause,
                     "specific_clarification": f"Please clarify whether engineering exception is granted or provide corrected tag attributes/hardware configuration for {', '.join(issue.affected_tags)}.",
                     "suggested_action": issue.suggested_action,
-                    "affected_tags": issue.affected_tags
+                    "affected_tags": issue.affected_tags,
+                    "priority": p_info["priority"],
+                    "priority_label": p_info["priority_label"],
+                    "impact_score": p_info["impact_score"],
+                    "impact_description": p_info["impact_description"],
+                    "recommended_remedy": p_info["recommended_remedy"]
                 })
 
         # Process any unallocated signals that didn't generate an error
@@ -65,16 +79,34 @@ class TQGenerator:
             tq_code = f"TQ-{project_id:02d}-{tq_idx:03d}"
             tq_idx += 1
 
+            desc = f"Signal '{ua.tag}' ({ua.signal_type}) could not be assigned to control system hardware."
+            rc = ua.reason or "Hardware capacity limit reached or constraint conflict prevented automated allocation."
+            sugg = "Review hardware layout in Rules & Hardware page or verify IO list."
+
+            p_info = PriorityClassifier.classify_tq(
+                category="Unresolved Allocation",
+                description=desc,
+                root_cause=rc,
+                suggested_action=sugg
+            )
+
             generated_tqs.append({
                 "tq_code": tq_code,
                 "project_id": project_id,
                 "revision_id": revision_id,
                 "category": "Unresolved Allocation",
-                "description": f"Signal '{ua.tag}' ({ua.signal_type}) could not be assigned to control system hardware.",
-                "root_cause": ua.reason or "Hardware capacity limit reached or constraint conflict prevented automated allocation.",
+                "description": desc,
+                "root_cause": rc,
                 "specific_clarification": f"Confirm if additional CHARM baseplate hardware should be added or if signal '{ua.tag}' can be assigned to another cabinet.",
-                "suggested_action": "Review hardware layout in Rules & Hardware page or verify IO list.",
-                "affected_tags": [ua.tag]
+                "suggested_action": sugg,
+                "affected_tags": [ua.tag],
+                "priority": p_info["priority"],
+                "priority_label": p_info["priority_label"],
+                "impact_score": p_info["impact_score"],
+                "impact_description": p_info["impact_description"],
+                "recommended_remedy": p_info["recommended_remedy"]
             })
 
+        # Sort TQs by impact_score descending (most critical blockers first)
+        generated_tqs.sort(key=lambda t: t.get("impact_score", 0), reverse=True)
         return generated_tqs

@@ -37,6 +37,7 @@ from models import (
     ValidationIssueModel, ValidationSummaryModel
 )
 from rules import RuleEvaluator, RedundancyNormalizer
+from engine.priority_classifier import PriorityClassifier
 
 class IndependentValidator:
     def __init__(self, config: Optional[HardwareConfigModel] = None):
@@ -481,6 +482,26 @@ class IndependentValidator:
         warnings = len([i for i in all_issues if i.severity == "WARNING"])
         infos = len([i for i in all_issues if i.severity == "INFO"])
 
+        for issue in all_issues:
+            p_info = PriorityClassifier.classify_issue(
+                issue.rule_name,
+                issue.message,
+                issue.severity,
+                issue.affected_hardware
+            )
+            issue.priority = p_info["priority"]
+            issue.priority_label = p_info["priority_label"]
+            issue.impact_score = p_info["impact_score"]
+            issue.impact_description = p_info["impact_description"]
+            issue.recommended_remedy = p_info["recommended_remedy"]
+
+        # Sort issues by impact_score descending
+        all_issues.sort(key=lambda i: getattr(i, "impact_score", 0), reverse=True)
+
+        p1_count = len([i for i in all_issues if i.priority == PriorityClassifier.P1_CRITICAL])
+        p2_count = len([i for i in all_issues if i.priority == PriorityClassifier.P2_HIGH])
+        p3_count = len([i for i in all_issues if i.priority == PriorityClassifier.P3_ADVISORY])
+
         is_fully_validated = (errors == 0 and unallocated == 0)
 
         return ValidationSummaryModel(
@@ -491,5 +512,8 @@ class IndependentValidator:
             warning_count=warnings,
             info_count=infos,
             is_fully_validated=is_fully_validated,
-            issues=all_issues
+            issues=all_issues,
+            p1_count=p1_count,
+            p2_count=p2_count,
+            p3_count=p3_count
         )

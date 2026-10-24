@@ -956,7 +956,8 @@ def get_deliverables_pack(project_id: int, revision_id: Optional[int] = None):
         rev_code = match_rev["revision_code"] if match_rev else "Rev A"
 
     assignments = DBService.get_assignments(project_id, revision_id)
-    return DeliverablesGenerator.generate_deliverables_pack(project.name, rev_code, assignments)
+    proj_name = project.get("name", "DeltaV DCS Project") if isinstance(project, dict) else getattr(project, "name", "DeltaV DCS Project")
+    return DeliverablesGenerator.generate_deliverables_pack(proj_name, rev_code, assignments)
 
 # --- Field QR Labels ---
 @app.get("/api/projects/{project_id}/qr-labels")

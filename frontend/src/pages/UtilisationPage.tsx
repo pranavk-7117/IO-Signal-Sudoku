@@ -260,7 +260,7 @@ export const UtilisationPage: React.FC = () => {
           value={`${summary.used_ciocs} / ${summary.total_ciocs}`}
           subtitle={`${summary.used_baseplates} active baseplates`}
           icon={<Server className="w-5 h-5" />}
-          color="slate"
+          color="blue"
         />
       </div>
 
@@ -281,8 +281,8 @@ export const UtilisationPage: React.FC = () => {
               <span className="text-slate-600">Reserved Spare</span>
             </div>
             <div className="flex items-center space-x-1.5">
-              <span className="w-3 h-3 rounded-xs bg-slate-200"></span>
-              <span className="text-slate-600">Free</span>
+              <span className="w-3 h-3 rounded-xs bg-sky-400"></span>
+              <span className="text-slate-600 font-semibold text-sky-800">Expansion Free</span>
             </div>
           </div>
         </div>
@@ -299,7 +299,7 @@ export const UtilisationPage: React.FC = () => {
               />
               <Bar dataKey="Used" stackId="a" fill="#2563EB" />
               <Bar dataKey="Spare" stackId="a" fill="#F59E0B" />
-              <Bar dataKey="Free" stackId="a" fill="#CBD5E1" />
+              <Bar dataKey="Free" stackId="a" fill="#38BDF8" />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -417,8 +417,8 @@ export const UtilisationPage: React.FC = () => {
                 <span className="text-slate-600">Reserved Spare</span>
               </div>
               <div className="flex items-center space-x-1.5">
-                <span className="w-3.5 h-3.5 rounded bg-slate-200 border border-slate-300"></span>
-                <span className="text-slate-600">Empty / Free</span>
+                <span className="w-3.5 h-3.5 rounded bg-sky-100 border border-sky-300"></span>
+                <span className="text-slate-600">Available Free Slot</span>
               </div>
             </div>
 
@@ -436,7 +436,7 @@ export const UtilisationPage: React.FC = () => {
                   {/* 12 CHARM slot rack */}
                   <div className="grid grid-cols-6 sm:grid-cols-12 gap-1 bg-white p-2.5 rounded-lg border border-slate-200">
                     {bp.slots.map((slot) => {
-                      let slotBg = 'bg-slate-100 hover:bg-slate-200 text-slate-400 border-slate-200';
+                      let slotBg = 'bg-sky-50/70 hover:bg-sky-100 text-sky-800/60 border-sky-200/90 hover:border-sky-400';
                       let sigType = (slot.signal_type || '').toUpperCase();
 
                       if (slot.is_allocated) {
@@ -445,7 +445,7 @@ export const UtilisationPage: React.FC = () => {
                         else if (sigType.startsWith('DI')) slotBg = 'bg-emerald-600 text-white';
                         else if (sigType.includes('SOV') || sigType.includes('SOLENOID')) slotBg = 'bg-rose-600 text-white';
                         else if (sigType.startsWith('DO')) slotBg = 'bg-indigo-600 text-white';
-                        else slotBg = 'bg-slate-800 text-white';
+                        else slotBg = 'bg-violet-700 text-white';
                       } else if (slot.is_spare) {
                         slotBg = 'bg-amber-100 border border-amber-300 text-amber-800';
                       }

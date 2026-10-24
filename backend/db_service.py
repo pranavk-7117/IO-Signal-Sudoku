@@ -3,6 +3,7 @@ import json
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from database import get_db
+from engine.priority_classifier import PriorityClassifier
 from models import (
     ProjectCreate, ProjectUpdate, ProjectResponse,
     RevisionCreate, RevisionResponse, HardwareConfigModel, RuleConfigModel,
@@ -796,12 +797,19 @@ class DBService:
             cursor.execute("""
                 INSERT INTO validation_results (
                     project_id, revision_id, issue_id, severity, rule_name,
-                    affected_tags_json, affected_hardware, message, suggested_action, blocks_approval, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    affected_tags_json, affected_hardware, message, suggested_action, blocks_approval,
+                    priority, priority_label, impact_score, impact_description, recommended_remedy, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """, (
                 project_id, revision_id, issue.issue_id, issue.severity, issue.rule_name,
                 json.dumps(issue.affected_tags), issue.affected_hardware, issue.message,
-                issue.suggested_action, 1 if issue.blocks_approval else 0, now
+                issue.suggested_action, 1 if issue.blocks_approval else 0,
+                getattr(issue, "priority", "P2_HIGH") or "P2_HIGH",
+                getattr(issue, "priority_label", "P2 - Commercial and Spares Risk") or "P2 - Commercial and Spares Risk",
+                getattr(issue, "impact_score", 75) or 75,
+                getattr(issue, "impact_description", "") or "",
+                getattr(issue, "recommended_remedy", "") or "",
+                now
             ))
 
         conn.commit()
@@ -817,6 +825,11 @@ class DBService:
         rows = cursor.fetchall()
         issues = []
         for r in rows:
+            p_info = None
+            has_p = "priority" in r.keys() and r["priority"]
+            if not has_p:
+                p_info = PriorityClassifier.classify_issue(r["rule_name"], r["message"], r["severity"], r["affected_hardware"])
+
             issues.append(ValidationIssueModel(
                 id=r["id"],
                 issue_id=r["issue_id"],
@@ -826,7 +839,12 @@ class DBService:
                 affected_hardware=r["affected_hardware"],
                 message=r["message"],
                 suggested_action=r["suggested_action"],
-                blocks_approval=bool(r["blocks_approval"])
+                blocks_approval=bool(r["blocks_approval"]),
+                priority=r["priority"] if has_p else (p_info["priority"] if p_info else "P2_HIGH"),
+                priority_label=r["priority_label"] if ("priority_label" in r.keys() and r["priority_label"]) else (p_info["priority_label"] if p_info else "P2 - Commercial and Spares Risk"),
+                impact_score=r["impact_score"] if ("impact_score" in r.keys() and r["impact_score"] is not None) else (p_info["impact_score"] if p_info else 75),
+                impact_description=r["impact_description"] if ("impact_description" in r.keys() and r["impact_description"]) else (p_info["impact_description"] if p_info else ""),
+                recommended_remedy=r["recommended_remedy"] if ("recommended_remedy" in r.keys() and r["recommended_remedy"]) else (p_info["recommended_remedy"] if p_info else "")
             ))
         conn.close()
         return issues
@@ -846,6 +864,11 @@ class DBService:
         rows = cursor.fetchall()
         tqs = []
         for r in rows:
+            p_info = None
+            has_priority = "priority" in r.keys() and r["priority"]
+            if not has_priority:
+                p_info = PriorityClassifier.classify_tq(r["category"], r["description"], r["root_cause"], r["suggested_action"])
+
             tqs.append(TQResponseModel(
                 id=r["id"],
                 tq_code=r["tq_code"],
@@ -860,8 +883,14 @@ class DBService:
                 resolution_notes=r["resolution_notes"] or "",
                 affected_tags=json.loads(r["affected_tags_json"]),
                 created_at=r["created_at"],
-                updated_at=r["updated_at"]
+                updated_at=r["updated_at"],
+                priority=r["priority"] if has_priority else (p_info["priority"] if p_info else "P2_HIGH"),
+                priority_label=r["priority_label"] if ("priority_label" in r.keys() and r["priority_label"]) else (p_info["priority_label"] if p_info else "P2 - Commercial and Spares Risk"),
+                impact_score=r["impact_score"] if ("impact_score" in r.keys() and r["impact_score"] is not None) else (p_info["impact_score"] if p_info else 75),
+                impact_description=r["impact_description"] if ("impact_description" in r.keys() and r["impact_description"]) else (p_info["impact_description"] if p_info else ""),
+                recommended_remedy=r["recommended_remedy"] if ("recommended_remedy" in r.keys() and r["recommended_remedy"]) else (p_info["recommended_remedy"] if p_info else "")
             ))
+        tqs.sort(key=lambda t: t.impact_score or 0, reverse=True)
         conn.close()
         return tqs
 
@@ -876,15 +905,36 @@ class DBService:
         """, (tq_dict["project_id"], tq_dict["tq_code"]))
         existing = cursor.fetchone()
 
+        p_info = None
+        p_val = tq_dict.get("priority")
+        p_lbl = tq_dict.get("priority_label")
+        imp_sc = tq_dict.get("impact_score")
+        imp_desc = tq_dict.get("impact_description")
+        rec_rem = tq_dict.get("recommended_remedy")
+        if not p_val or imp_sc is None:
+            p_info = PriorityClassifier.classify_tq(
+                tq_dict.get("category", ""),
+                tq_dict.get("description", ""),
+                tq_dict.get("root_cause", ""),
+                tq_dict.get("suggested_action", "")
+            )
+            p_val = p_info["priority"]
+            p_lbl = p_info["priority_label"]
+            imp_sc = p_info["impact_score"]
+            imp_desc = p_info["impact_description"]
+            rec_rem = p_info["recommended_remedy"]
+
         if existing:
             cursor.execute("""
                 UPDATE technical_queries
                 SET description = ?, root_cause = ?, specific_clarification = ?, suggested_action = ?,
-                    affected_tags_json = ?, updated_at = ?
+                    affected_tags_json = ?, priority = ?, priority_label = ?, impact_score = ?,
+                    impact_description = ?, recommended_remedy = ?, updated_at = ?
                 WHERE id = ?;
             """, (
                 tq_dict["description"], tq_dict["root_cause"], tq_dict["specific_clarification"],
-                tq_dict["suggested_action"], json.dumps(tq_dict["affected_tags"]), now, existing["id"]
+                tq_dict["suggested_action"], json.dumps(tq_dict["affected_tags"]),
+                p_val, p_lbl, imp_sc, imp_desc, rec_rem, now, existing["id"]
             ))
             tq_id = existing["id"]
         else:
@@ -892,12 +942,14 @@ class DBService:
                 INSERT INTO technical_queries (
                     tq_code, project_id, revision_id, category, description, root_cause,
                     specific_clarification, suggested_action, status, resolution_notes, affected_tags_json,
+                    priority, priority_label, impact_score, impact_description, recommended_remedy,
                     created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Open', '', ?, ?, ?);
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Open', '', ?, ?, ?, ?, ?, ?, ?, ?);
             """, (
                 tq_dict["tq_code"], tq_dict["project_id"], tq_dict["revision_id"], tq_dict["category"],
                 tq_dict["description"], tq_dict["root_cause"], tq_dict["specific_clarification"],
-                tq_dict["suggested_action"], json.dumps(tq_dict["affected_tags"]), now, now
+                tq_dict["suggested_action"], json.dumps(tq_dict["affected_tags"]),
+                p_val, p_lbl, imp_sc, imp_desc, rec_rem, now, now
             ))
             tq_id = cursor.lastrowid
 

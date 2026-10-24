@@ -106,11 +106,11 @@ export const CabinetElevationView: React.FC<CabinetElevationViewProps> = ({
       )}
 
       {/* Industrial Rack Visualizer */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 bg-slate-100 p-4 rounded-xl border-2 border-slate-300">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 bg-slate-950 p-5 rounded-2xl border-2 border-slate-800 shadow-xl">
         {activeCiocs.map((cioc, ciocIdx) => (
-          <div key={cioc.cioc_id} className="bg-slate-200/90 border border-slate-300 rounded-xl p-3 space-y-2.5">
+          <div key={cioc.cioc_id} className="bg-slate-900/90 border border-slate-700 rounded-xl p-3.5 space-y-3 shadow-inner">
             {/* CIOC Carrier Banner */}
-            <div className="flex items-center justify-between bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-mono">
+            <div className="flex items-center justify-between bg-gradient-to-r from-blue-950 via-slate-900 to-indigo-950 border-l-4 border-l-blue-400 text-white px-3.5 py-2 rounded-lg text-xs font-mono shadow-xs">
               <span className="font-bold tracking-tight">
                 CARRIER {ciocIdx + 1} ({elevationSide}): {cioc.cioc_id}
               </span>
@@ -124,17 +124,17 @@ export const CabinetElevationView: React.FC<CabinetElevationViewProps> = ({
               {cioc.baseplates.map((bp) => (
                 <div
                   key={bp.baseplate_id}
-                  className="bg-white border border-slate-300 rounded-lg p-2 space-y-1 shadow-2xs"
+                  className="bg-slate-900 border border-slate-700/80 rounded-lg p-2.5 space-y-1.5 shadow-xs"
                 >
-                  <div className="flex items-center justify-between text-[10px] font-mono font-bold text-slate-700">
-                    <span className="text-blue-700">{bp.baseplate_id}</span>
+                  <div className="flex items-center justify-between text-[10px] font-mono font-bold text-slate-300">
+                    <span className="text-sky-400 font-extrabold">{bp.baseplate_id}</span>
                     <span className="text-slate-400">{bp.used_slots}/12</span>
                   </div>
 
                   {/* 12 CHARMs Grid */}
                   <div className="grid grid-cols-6 gap-0.5">
                     {bp.slots.map((slot) => {
-                      let bg = 'bg-slate-100 border-slate-200 text-slate-400';
+                      let bg = 'bg-slate-950 border-slate-800 text-slate-600 hover:border-sky-500 hover:text-sky-300';
                       const st = (slot.signal_type || '').toUpperCase();
 
                       if (slot.is_allocated) {
@@ -144,9 +144,9 @@ export const CabinetElevationView: React.FC<CabinetElevationViewProps> = ({
                         else if (st.startsWith('DI')) bg = 'bg-emerald-600 text-white border-emerald-700';
                         else if (st.includes('SOV') || st.includes('SOLENOID')) bg = 'bg-rose-600 text-white border-rose-700';
                         else if (st.startsWith('DO')) bg = 'bg-indigo-600 text-white border-indigo-700';
-                        else bg = 'bg-slate-700 text-white border-slate-800';
+                        else bg = 'bg-violet-600 text-white border-violet-700';
                       } else if (slot.is_spare) {
-                        bg = 'bg-purple-100 border-purple-300 text-purple-700';
+                        bg = 'bg-amber-500/25 border-amber-500/70 text-amber-300';
                       }
 
                       return (

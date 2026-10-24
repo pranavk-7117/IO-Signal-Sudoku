@@ -271,6 +271,11 @@ class ValidationIssueModel(BaseModel):
     message: str
     suggested_action: str
     blocks_approval: bool
+    priority: str = "P2_HIGH"  # P1_CRITICAL, P2_HIGH, P3_ADVISORY
+    priority_label: str = "P2 - Commercial and Spares Risk"
+    impact_score: int = 75
+    impact_description: Optional[str] = None
+    recommended_remedy: Optional[str] = None
 
 class ValidationSummaryModel(BaseModel):
     total_signals: int
@@ -281,6 +286,9 @@ class ValidationSummaryModel(BaseModel):
     info_count: int
     is_fully_validated: bool
     issues: List[ValidationIssueModel]
+    p1_count: int = 0
+    p2_count: int = 0
+    p3_count: int = 0
 
 # --- Technical Query Models ---
 class TQCreateModel(BaseModel):
@@ -293,6 +301,11 @@ class TQCreateModel(BaseModel):
     suggested_action: str
     affected_tags: List[str]
     status: str = "Open"  # Open, In Review, Resolved, Closed
+    priority: str = "P2_HIGH"
+    priority_label: str = "P2 - Commercial and Spares Risk"
+    impact_score: int = 75
+    impact_description: Optional[str] = None
+    recommended_remedy: Optional[str] = None
 
 class TQUpdateModel(BaseModel):
     status: Optional[str] = None
@@ -313,6 +326,11 @@ class TQResponseModel(BaseModel):
     affected_tags: List[str]
     created_at: str
     updated_at: str
+    priority: str = "P2_HIGH"
+    priority_label: str = "P2 - Commercial and Spares Risk"
+    impact_score: int = 75
+    impact_description: Optional[str] = None
+    recommended_remedy: Optional[str] = None
 
 # --- Revision Diff Models ---
 class RevisionDiffItem(BaseModel):

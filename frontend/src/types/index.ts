@@ -101,6 +101,10 @@ export interface Assignment {
   charm_index?: number;
   terminal_block?: string;
   charm_type?: string;
+  charm_part_no?: string;
+  charm_tb_part_no?: string;
+  charm_tb_terminals?: string;
+  loop_name?: string;
   status: 'Allocated' | 'Pending' | 'Needs Review' | 'Blocked';
   reason?: string;
   is_manual_override: boolean;
@@ -116,6 +120,11 @@ export interface ValidationIssue {
   message: string;
   suggested_action: string;
   blocks_approval: boolean;
+  priority?: 'P1_CRITICAL' | 'P2_HIGH' | 'P3_ADVISORY';
+  priority_label?: string;
+  impact_score?: number;
+  impact_description?: string;
+  recommended_remedy?: string;
 }
 
 export interface ValidationSummary {
@@ -127,6 +136,9 @@ export interface ValidationSummary {
   info_count: number;
   is_fully_validated: boolean;
   issues: ValidationIssue[];
+  p1_count?: number;
+  p2_count?: number;
+  p3_count?: number;
 }
 
 export interface TechnicalQuery {
@@ -144,6 +156,11 @@ export interface TechnicalQuery {
   affected_tags: string[];
   created_at: string;
   updated_at: string;
+  priority?: 'P1_CRITICAL' | 'P2_HIGH' | 'P3_ADVISORY';
+  priority_label?: string;
+  impact_score?: number;
+  impact_description?: string;
+  recommended_remedy?: string;
 }
 
 export interface CharmSlot {
