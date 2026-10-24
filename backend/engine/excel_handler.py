@@ -1,3 +1,5 @@
+from engine.mapping_engine import MappingEngine
+from rules import RedundancyNormalizer, HardwareSystemConfig
 import os
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -101,7 +103,12 @@ class ExcelHandler:
         }
 
     @staticmethod
-    def _compute_suggested_mappings(header_row: List[str], suggested_map: Dict[str, str]):
+    def _compute_suggested_mappings(header_row: List[str], suggested_map: Dict[str, str], details_map: Optional[Dict[str, Any]] = None):
+        scored = MappingEngine.compute_scored_mappings(header_row)
+        for field, info in scored.items():
+            suggested_map[field] = info["header"]
+            if details_map is not None:
+                details_map[field] = info
         norm_headers = [(h, h.lower().replace("_", " ").replace("-", " ").strip()) for h in header_row]
 
         priorities = [
@@ -202,25 +209,10 @@ class ExcelHandler:
             desc_val = str(row[desc_col]).strip() if desc_col and desc_col in row and pd.notna(row[desc_col]) else ""
             cable_val = str(row[cable_col]).strip() if cable_col and cable_col in row and pd.notna(row[cable_col]) else ""
             
-            pair_val = None
-            if pair_col and pair_col in row and pd.notna(row[pair_col]):
-                try:
-                    # handles strings like "P1", "1", "Pair 2"
-                    cleaned = "".join([c for c in str(row[pair_col]) if c.isdigit()])
-                    if cleaned:
-                        pair_val = int(cleaned)
-                except Exception:
-                    pair_val = None
-
-            red_val = ""
-            if red_col and red_col in row and pd.notna(row[red_col]):
-                raw_red = str(row[red_col]).strip().upper()
-                if "A" in raw_red and "B" not in raw_red:
-                    red_val = "A"
-                elif "B" in raw_red and "A" not in raw_red:
-                    red_val = "B"
-                else:
-                    red_val = raw_red
+            pair_val = MappingEngine.parse_pair_number(row[pair_col]) if pair_col and pair_col in row else None
+            _cfg = HardwareSystemConfig()
+            raw_red = str(row[red_col]).strip() if red_col and red_col in row and pd.notna(row[red_col]) else ""
+            red_val = RedundancyNormalizer.normalize(raw_red, _cfg.redundancy_mappings) or ""
 
             group_val = str(row[group_col]).strip() if group_col and group_col in row and pd.notna(row[group_col]) else ""
 
