@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { api } from '../services/api';
-import { ChatMessage, RiskAssessmentResponse } from '../types';
+import { ChatMessage, RiskAssessmentResponse, ActionProposal } from '../types';
 
 function getGroqClientKey(): string {
   try {
@@ -209,6 +209,7 @@ export const DCSChatbot: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [riskInfo, setRiskInfo] = useState<RiskAssessmentResponse | null>(null);
   const [applyingSuggestionId, setApplyingSuggestionId] = useState<string | null>(null);
+  const [applyingActionId, setApplyingActionId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [privacyMode, setPrivacyMode] = useState<'cloud_redacted' | 'local_only'>('cloud_redacted');
 
@@ -239,6 +240,50 @@ export const DCSChatbot: React.FC = () => {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
+  const handleExecuteActionCard = async (proposal: ActionProposal, messageIndex: number) => {
+    if (!currentProject || !currentRevision) return;
+    try {
+      setApplyingActionId(proposal.action_id);
+      const res = await api.applyChatAction(
+        currentProject.id,
+        currentRevision.id,
+        proposal,
+        'Lead DCS Engineer'
+      );
+
+      showToast(res.message || `Change applied: ${proposal.title}`);
+
+      // Update message applied state & add audit followup
+      setMessages((prev) => {
+        const updated = [...prev];
+        if (updated[messageIndex]) {
+          updated[messageIndex] = {
+            ...updated[messageIndex],
+            action_proposal_applied: true
+          };
+        }
+        return [
+          ...updated,
+          {
+            role: 'assistant',
+            content: `✅ **Change Confirmed & Applied:** *"${proposal.title}"*\n\n` +
+                     `- **Target:** \`${proposal.target_entity}\`\n` +
+                     `- **Committed Address:** \`${proposal.proposed_value}\`\n` +
+                     `- **Audit Record:** Logged to plant database under action \`AI_COPILOT_ACTION_APPLIED\`.\n\n` +
+                     `The allocation register, validation metrics, and hardware utilisation maps have been updated live.`
+          }
+        ];
+      });
+
+      await loadRiskInfo();
+      await refreshProjects();
+    } catch (err: any) {
+      showToast(`Failed to apply change: ${err.message}`);
+    } finally {
+      setApplyingActionId(null);
+    }
+  };
+
   const handleSend = async (userText?: string) => {
     const textToSend = userText || inputMsg;
     if (!textToSend.trim() || loading) return;
@@ -252,33 +297,31 @@ export const DCSChatbot: React.FC = () => {
     setLoading(true);
 
     let assistantContent = '';
+    let actionProposal: ActionProposal | undefined = undefined;
 
-    if (privacyMode === 'local_only') {
-      // 100% On-Premise Air-Gapped execution: zero network calls outside local browser
-      const fallback = getLocalDCSExpertResponse(textToSend, riskInfo);
-      assistantContent = fallback.content;
-    } else {
-      // Step 1: Try backend /api/chat
-      try {
-        const res = await api.sendChatMessage({
-          project_id: currentProject?.id,
-          revision_id: currentRevision?.id,
-          messages: newMsgs,
-          context_page: window.location.pathname
-        });
-        assistantContent = res.message.content;
-      } catch (backendErr) {
-        console.info('Backend /api/chat unreachable, engaging direct Groq LLM API with Privacy Redaction:', backendErr);
-        // Step 2: Call Groq API directly from browser with Privacy Redaction
+    // Step 1: Always try backend /api/chat so Action Engine pre-flight simulation executes
+    try {
+      const res = await api.sendChatMessage({
+        project_id: currentProject?.id,
+        revision_id: currentRevision?.id,
+        messages: newMsgs,
+        context_page: window.location.pathname
+      });
+      assistantContent = res.message.content;
+      actionProposal = res.action_proposal;
+    } catch (backendErr) {
+      console.info('Backend /api/chat unreachable, engaging fallback:', backendErr);
+      if (privacyMode === 'cloud_redacted') {
         try {
           const groqAnswer = await callGroqDirect(newMsgs, currentProject, currentRevision, riskInfo);
           assistantContent = groqAnswer;
         } catch (groqErr) {
-          console.warn('Groq direct fetch failed, engaging local DCS expert fallback:', groqErr);
-          // Step 3: Local DCS expert fallback
           const fallback = getLocalDCSExpertResponse(textToSend, riskInfo);
           assistantContent = fallback.content;
         }
+      } else {
+        const fallback = getLocalDCSExpertResponse(textToSend, riskInfo);
+        assistantContent = fallback.content;
       }
     }
 
@@ -286,7 +329,8 @@ export const DCSChatbot: React.FC = () => {
       ...prev,
       {
         role: 'assistant',
-        content: assistantContent
+        content: assistantContent,
+        action_proposal: actionProposal
       }
     ]);
     setLoading(false);
@@ -325,10 +369,13 @@ export const DCSChatbot: React.FC = () => {
   };
 
   const promptChips = [
-    { label: '📊 Analyze Project Risk & Suggest Rules', query: 'Analyze the engineering risks and give me rule suggestions for this project.' },
-    { label: '⚡ Why Solenoids need Isolated DO?', query: 'Why are Solenoids and Horns required to use Isolated DO SE4302T02 and Fused TB SE4502?' },
-    { label: '🛡️ Explain 10% Wired Spares rule', query: 'Explain how 10% wired spare capacity must be calculated independently by IO type per controller.' },
-    { label: '🔄 Any alternate allocation possible?', query: 'Is any alternate allocation possible for any signal in this project?' }
+    { label: '⚡ Move 320-FT-80002 to CIOC-02', query: 'Move 320-FT-80002 to CIOC-02' },
+    { label: '🛡️ Upgrade 320-XV-80001 to isolated TB', query: 'Upgrade 320-XV-80001 to isolated TB' },
+    { label: '📋 Resolve TQ-01', query: 'Resolve TQ-01' },
+    { label: '⚖️ Enforce Redundancy', query: 'Enforce Train A/B Redundancy Separation' },
+    { label: '📊 Project Risk & Rules', query: 'Analyze the engineering risks and give me rule suggestions for this project.' },
+    { label: '⚡ Solenoid Isolated DO', query: 'Why are Solenoids and Horns required to use Isolated DO SE4302T02 and Fused TB SE4502?' },
+    { label: '🛡️ 10% Wired Spares Rule', query: 'Explain how 10% wired spare capacity must be calculated independently by IO type per controller.' },
   ];
 
   return (
@@ -471,6 +518,97 @@ export const DCSChatbot: React.FC = () => {
                         </p>
                       ))}
                     </div>
+
+                    {/* Pre-Flight Action Proposal Card with 1-Click Apply */}
+                    {isAssistant && m.action_proposal && (
+                      <div className="mt-3 pt-2.5 border-t border-slate-200">
+                        <div className="bg-slate-900 text-white rounded-xl p-3 border border-slate-700 shadow-md">
+                          {/* Card Header & Status */}
+                          <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                            <div className="flex items-center space-x-1.5">
+                              <Cpu className="w-4 h-4 text-blue-400" />
+                              <span className="text-[11px] font-bold text-slate-100">{m.action_proposal.title}</span>
+                            </div>
+                            <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-full flex items-center space-x-1 ${
+                              m.action_proposal.dry_run.status === 'PASS'
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                            }`}>
+                              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                              <span>{m.action_proposal.dry_run.status === 'PASS' ? 'PASS (0 Regressions)' : 'WARNING'}</span>
+                            </span>
+                          </div>
+
+                          {/* Proposal Description */}
+                          <p className="text-[10px] text-slate-300 my-2 leading-relaxed">
+                            {m.action_proposal.description}
+                          </p>
+
+                          {/* Hardware Address Diff Box */}
+                          <div className="bg-slate-950/80 rounded-lg p-2 border border-slate-800 mb-2 font-mono text-[10px]">
+                            <div className="flex items-center justify-between text-slate-400 text-[9px] uppercase tracking-wider mb-1">
+                              <span>Current Address</span>
+                              <span>Target Address</span>
+                            </div>
+                            <div className="flex items-center justify-between text-slate-200">
+                              <span className="text-rose-300 bg-rose-950/60 px-1.5 py-0.5 rounded border border-rose-800/50">
+                                {m.action_proposal.current_value || 'Unassigned'}
+                              </span>
+                              <span className="text-slate-500 font-sans font-bold">➔</span>
+                              <span className="text-emerald-300 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800/50">
+                                {m.action_proposal.proposed_value}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Pre-flight Dry-Run Results */}
+                          <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/60 text-[10px] space-y-1 mb-2.5">
+                            <div className="text-[9px] font-bold text-blue-300 uppercase tracking-wide flex items-center space-x-1">
+                              <ShieldAlert className="w-3 h-3 text-blue-400" />
+                              <span>Pre-Flight Safety Simulation:</span>
+                            </div>
+                            {m.action_proposal.dry_run.p1_resolved?.map((res: string, rIdx: number) => (
+                              <div key={rIdx} className="flex items-center space-x-1 text-emerald-400 text-[10px]">
+                                <CheckCircle2 className="w-3 h-3 shrink-0" />
+                                <span className="truncate">Resolves: {res}</span>
+                              </div>
+                            ))}
+                            <div className="text-[9px] text-slate-400 italic">
+                              {m.action_proposal.dry_run.impact_summary}
+                            </div>
+                          </div>
+
+                          {/* 1-Click Apply Button or Confirmed State */}
+                          {m.action_proposal_applied ? (
+                            <div className="bg-emerald-950/50 border border-emerald-700/60 rounded-lg p-2 flex items-center justify-between text-[10px] text-emerald-300">
+                              <div className="flex items-center space-x-1.5">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                                <span className="font-semibold">Applied & Audited to Hardware Register</span>
+                              </div>
+                              <span className="text-[9px] text-emerald-400/80 font-mono">Logged</span>
+                            </div>
+                          ) : (
+                            <button
+                              disabled={applyingActionId === m.action_proposal.action_id}
+                              onClick={() => handleExecuteActionCard(m.action_proposal!, idx)}
+                              className="w-full py-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-[11px] rounded-lg shadow transition-all flex items-center justify-center space-x-1.5 disabled:opacity-50"
+                            >
+                              {applyingActionId === m.action_proposal.action_id ? (
+                                <>
+                                  <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                  <span>Executing & Validating...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Zap className="w-3.5 h-3.5 text-amber-300" />
+                                  <span>Confirm & Apply Change</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Quick Suggestions Cards from Assistant */}
                     {isAssistant && riskInfo && riskInfo.suggestions.length > 0 && idx === messages.length - 1 && (

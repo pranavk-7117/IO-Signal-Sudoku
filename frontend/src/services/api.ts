@@ -2,7 +2,7 @@ import {
   Project, Revision, HardwareConfig, ProjectRule, Assignment,
   ValidationSummary, TechnicalQuery, UtilisationSummary,
   RevisionComparison, AuditLog,
-  RiskAssessmentResponse, ChatRequest, ChatResponse,
+  RiskAssessmentResponse, ChatRequest, ChatResponse, ActionProposal,
   CounterfactualResponse, BlastRadiusResponse,
   PreflightLintResponse, ReferenceScorecardResponse,
   PreprocessingAnalysisResponse, ParetoResponse,
@@ -387,6 +387,29 @@ export const api = {
     if (!res.ok) {
       const err = await res.json();
       throw new Error(err.detail || 'Failed to communicate with AI Assistant');
+    }
+    return res.json();
+  },
+
+  applyChatAction: async (
+    projectId: number,
+    revisionId: number,
+    actionProposal: ActionProposal,
+    userName: string = 'Lead DCS Engineer'
+  ): Promise<{ success: boolean; message: string; action_id?: string; val_summary?: any }> => {
+    const res = await fetch(`${API_BASE}/chat/action/apply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        project_id: projectId,
+        revision_id: revisionId,
+        action_proposal: actionProposal,
+        user_name: userName
+      })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Failed to apply action proposal');
     }
     return res.json();
   },

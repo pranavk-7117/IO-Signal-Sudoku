@@ -18,7 +18,7 @@ from models import (
     RevisionComparisonResponse, UtilisationSummaryModel,
     AuditLogModel, SheetInspectResponse, ColumnMappingRequest,
     ApprovalRequest, ApprovalResponse, AllocationRunResult, SolverDiagnostics,
-    RiskAssessmentResponse, ApplySuggestionRequest, ChatRequest, ChatResponse
+    RiskAssessmentResponse, ApplySuggestionRequest, ChatRequest, ChatResponse, ChatActionApplyRequest
 )
 from db_service import DBService
 from engine.allocator import AllocationEngine
@@ -31,6 +31,7 @@ from engine.revision_comparator import RevisionComparator
 from engine.explainability import ExplainabilityEngine
 from engine.risk_engine import RiskEngine
 from engine.chatbot import ChatbotService
+from engine.chat_action_engine import ChatActionEngine
 from engine.counterfactual_engine import CounterfactualEngine, BlastRadiusSimulator
 from engine.preflight_lint import PreflightLintDoctor, ReferenceScorecardEngine
 from engine.preprocessing_pipeline import SignalPreprocessor
@@ -740,10 +741,10 @@ def handle_chat_query(req: ChatRequest):
     hw_config = None
     risk_info = None
     val_summary = None
+    rev_id = req.revision_id
 
     if req.project_id:
         proj_meta = DBService.get_project(req.project_id)
-        rev_id = req.revision_id
         if not rev_id:
             revs = DBService.get_revisions(req.project_id)
             active_rev = next((r for r in revs if r["is_active"]), revs[0] if revs else None)
@@ -757,15 +758,58 @@ def handle_chat_query(req: ChatRequest):
             risk_info = RiskEngine.evaluate_project_risk(hw_config, signals, assignments)
             val_summary_obj = DBService.get_validation_results(req.project_id, rev_id)
             if val_summary_obj:
-                val_summary = val_summary_obj.model_dump()
+                if hasattr(val_summary_obj, "model_dump"):
+                    val_summary = val_summary_obj.model_dump()
+                elif isinstance(val_summary_obj, list):
+                    val_summary = {
+                        "error_count": sum(1 for i in val_summary_obj if getattr(i, "severity", "") == "ERROR"),
+                        "warning_count": sum(1 for i in val_summary_obj if getattr(i, "severity", "") == "WARNING"),
+                        "is_fully_validated": len([i for i in val_summary_obj if getattr(i, "severity", "") == "ERROR"]) == 0
+                    }
 
-    return ChatbotService.answer_query(
+    chat_res = ChatbotService.answer_query(
         request=req,
         project_meta=proj_meta,
         hw_config=hw_config,
         risk_info=risk_info,
         validation_summary=val_summary
     )
+
+    # Check for Action Proposal (Move signal, Upgrade TB, Resolve TQ, Update Rule)
+    if req.project_id and rev_id and req.messages:
+        last_user_msg = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
+        if last_user_msg:
+            try:
+                action_prop = ChatActionEngine.parse_and_propose_action(
+                    last_user_msg, req.project_id, rev_id
+                )
+                if action_prop:
+                    chat_res.action_proposal = action_prop
+                    if "I am monitoring" in chat_res.message.content or "### Emerson" in chat_res.message.content:
+                        chat_res.message.content = (
+                            f"### Pre-Flight Action Proposal Generated\n\n"
+                            f"I parsed your request to **{action_prop.get('title')}**.\n"
+                            f"A pre-flight dry-run simulation has been executed against Emerson DeltaV engineering rules. "
+                            f"Review the safety checks and proposed hardware diff below, then click **Confirm & Apply Change** to commit."
+                        )
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"Failed to parse chat action: {e}")
+
+    return chat_res
+
+@app.post("/api/chat/action/apply")
+def apply_chat_action(req: ChatActionApplyRequest):
+    try:
+        res = ChatActionEngine.execute_action(
+            project_id=req.project_id,
+            revision_id=req.revision_id,
+            proposal=req.action_proposal,
+            user_name=req.user_name or "Lead DCS Engineer"
+        )
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # --- "Why Not Here?" Counterfactual Engine ---
 @app.post("/api/projects/{project_id}/counterfactual")

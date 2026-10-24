@@ -1025,3 +1025,5 @@ class DBService:
         )
         conn.commit()
         conn.close()
+
+    log_audit = add_audit_log

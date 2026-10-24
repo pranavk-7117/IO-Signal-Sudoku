@@ -514,3 +514,10 @@ class ChatResponse(BaseModel):
     message: ChatMessage
     suggested_actions: Optional[List[Dict[str, Any]]] = None
     model_used: Optional[str] = "groq-qwen-27b"
+    action_proposal: Optional[Dict[str, Any]] = None
+
+class ChatActionApplyRequest(BaseModel):
+    project_id: int
+    revision_id: int
+    action_proposal: Dict[str, Any]
+    user_name: Optional[str] = "Lead DCS Engineer"

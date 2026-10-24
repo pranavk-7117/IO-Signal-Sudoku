@@ -291,10 +291,30 @@ export interface RiskAssessmentResponse {
   suggestions: RuleSuggestion[];
 }
 
+export interface ActionProposal {
+  action_id: string;
+  action_type: 'MOVE_SIGNAL' | 'UPGRADE_TB' | 'RESOLVE_TQ' | 'UPDATE_RULE';
+  title: string;
+  description: string;
+  target_entity: string;
+  current_value?: string;
+  proposed_value?: string;
+  dry_run: {
+    status: 'PASS' | 'WARNING' | 'FAIL';
+    p1_resolved: string[];
+    new_regressions: number;
+    impact_summary: string;
+  };
+  params: Record<string, any>;
+  audit_notes?: string;
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp?: string;
+  action_proposal?: ActionProposal;
+  action_proposal_applied?: boolean;
 }
 
 export interface ChatRequest {
@@ -315,6 +335,7 @@ export interface ChatResponse {
     risk_reduction_pts?: number;
   }>;
   model_used?: string;
+  action_proposal?: ActionProposal;
 }
 
 export interface CounterfactualCheck {
