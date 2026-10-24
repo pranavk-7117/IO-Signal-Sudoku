@@ -10,8 +10,8 @@
 | Phase | Description | Status | Evidence / Artifacts |
 | :--- | :--- | :---: | :--- |
 | **Phase 0** | Baseline benchmarks & synthetic dataset generators | **DONE** | Measured 37/300/1000/5000 baseline; `tools/gen_mdb.py`, `tools/gen_revision.py` built |
-| **Phase 1** | Config and rule engine, naming, redundancy normalisation | **IN PROGRESS** | JSON rule schemas (`default_rules.json`, `default_hardware.json`), pattern engine |
-| **Phase 2** | Multi-file import, rapidfuzz/scored mapping & validation | **QUEUED** | Multi-file upload wizard, confidence scoring, profile save/load |
+| **Phase 1** | Config and rule engine, naming, redundancy normalisation | **DONE** | JSON rule schemas (`default_rules.json`, `default_hardware.json`), pattern engine, normalizer, 5/5 tests passing |
+| **Phase 2** | Multi-file import, rapidfuzz/scored mapping & validation | **IN PROGRESS** | Multi-file upload wizard, confidence scoring, profile save/load |
 | **Phase 3** | Allocation engine (cables as units, constructive fallback + hinted CP-SAT) | **QUEUED** | Solves D1, D2, D3, D4, D5, D7, D10. Fast allocation $\le 10$s for 1k, $\le 45$s for 5k |
 | **Phase 4** | Independent validation layer & mutation test harness | **QUEUED** | Solves D16, zero placement imports, G1–G14 test verification |
 | **Phase 5** | TQs, reports, official template writer, revision impact | **QUEUED** | Solves D14, D17, D19; writes official 76-column template with openpyxl |

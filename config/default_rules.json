@@ -1,0 +1,324 @@
+[
+  {
+    "id": "R-001",
+    "name": "Cable Contiguity & Monotonic Pair Order",
+    "enabled": true,
+    "kind": "cable_contiguous",
+    "severity": "hard",
+    "weight": 100,
+    "scope": "cable",
+    "params": {
+      "enforce_order": true,
+      "max_pairs_single_baseplate": 12,
+      "allow_span_for_24_pair": true
+    }
+  },
+  {
+    "id": "R-002",
+    "name": "A/B Redundancy CIOC Separation",
+    "enabled": true,
+    "kind": "separate_on",
+    "severity": "hard",
+    "weight": 100,
+    "scope": "redundancy_group",
+    "params": {
+      "container_level": "cioc",
+      "redundancy_key_column": "redundancy",
+      "group_key_columns": ["logical_group", "loop_name", "unit"]
+    }
+  },
+  {
+    "id": "R-003",
+    "name": "Logical IO Grouping Locality",
+    "enabled": true,
+    "kind": "logical_group_together",
+    "severity": "soft",
+    "weight": 50,
+    "scope": "logical_group",
+    "params": {
+      "target_container": "baseplate",
+      "fallback_container": "cioc"
+    }
+  },
+  {
+    "id": "R-004",
+    "name": "Hardware Slot Capacity Limits",
+    "enabled": true,
+    "kind": "capacity",
+    "severity": "hard",
+    "weight": 100,
+    "scope": "all",
+    "params": {
+      "max_signals_per_charm": 1,
+      "charms_per_baseplate": 12,
+      "baseplates_per_cioc": 8,
+      "ciocs_per_cabinet": 4
+    }
+  },
+  {
+    "id": "R-005",
+    "name": "Reserved Empty Baseplates per Cabinet",
+    "enabled": true,
+    "kind": "spare_per_cabinet",
+    "severity": "hard",
+    "weight": 80,
+    "scope": "cabinet",
+    "params": {
+      "spare_baseplate_percent": 10.0,
+      "min_empty_baseplates_per_cabinet": 1
+    }
+  },
+  {
+    "id": "R-006",
+    "name": "Reserve Baseplate 1 for Cabinet Diagnostics",
+    "enabled": true,
+    "kind": "reserve",
+    "severity": "hard",
+    "weight": 90,
+    "scope": "cabinet",
+    "params": {
+      "target_cioc": "CIOC-01",
+      "target_baseplate": "001-CBP-1",
+      "match_condition": {
+        "column": "tag",
+        "operator": "contains",
+        "value": "-EJA"
+      },
+      "fallback_condition": {
+        "column": "description",
+        "operator": "contains",
+        "value": "Cabinet Alarm"
+      }
+    }
+  },
+  {
+    "id": "R-MAP-01",
+    "name": "CHARM & TB Mapping: RTD / 3-Wire Temperature",
+    "enabled": true,
+    "kind": "charm_terminal_map",
+    "severity": "hard",
+    "weight": 100,
+    "scope": "signal",
+    "params": {
+      "conditions": [
+        {"column": "signal_type", "operator": "in", "values": ["RTD", "AIR-RTD"]},
+        {"column": "electrical_spec", "operator": "contains", "value": "rtd"},
+        {"column": "signal_level", "operator": "contains", "value": "3-wire"},
+        {"column": "description", "operator": "contains", "value": "rtd"}
+      ],
+      "match_mode": "any",
+      "hardware": {
+        "charm_type": "RTD Input Charm",
+        "charm_part_no": "SE4303T03",
+        "terminal_block": "Standard CHARM Terminal Block",
+        "charm_tb_part_no": "SE4501",
+        "charm_tb_terminals": "1, 2, 4"
+      }
+    }
+  },
+  {
+    "id": "R-MAP-02",
+    "name": "CHARM & TB Mapping: 4-Wire / Coriolis / External AC Power",
+    "enabled": true,
+    "kind": "charm_terminal_map",
+    "severity": "hard",
+    "weight": 100,
+    "scope": "signal",
+    "params": {
+      "conditions": [
+        {"column": "signal_level", "operator": "contains", "value": "4-wire"},
+        {"column": "external_power", "operator": "contains", "value": "230vac"},
+        {"column": "external_power", "operator": "contains", "value": "110vac"},
+        {"column": "electrical_spec", "operator": "contains", "value": "4wire"}
+      ],
+      "match_mode": "any",
+      "hardware": {
+        "charm_type": "AI 4-20 MA HART CHARM",
+        "charm_part_no": "SE4303T01",
+        "terminal_block": "Standard CHARM Terminal Block",
+        "charm_tb_part_no": "SE4501",
+        "charm_tb_terminals": "-, 2, 4"
+      }
+    }
+  },
+  {
+    "id": "R-MAP-03",
+    "name": "CHARM & TB Mapping: Isolated DO (Solenoid Valve / SOV / Injected Power)",
+    "enabled": true,
+    "kind": "charm_terminal_map",
+    "severity": "hard",
+    "weight": 100,
+    "scope": "signal",
+    "params": {
+      "type_check": {"column": "signal_type", "operator": "in", "values": ["DO", "DOR", "DO-SOV", "DOR-SOV"]},
+      "conditions": [
+        {"column": "instrument_type", "operator": "in", "values": ["XYV", "ZYV", "SOV"]},
+        {"column": "tag", "operator": "regex", "pattern": ".*(XYV|ZYV|SOV).*"},
+        {"column": "description", "operator": "contains", "value": "solenoid"},
+        {"column": "description", "operator": "contains", "value": "sov"},
+        {"column": "signal_type", "operator": "in", "values": ["DO-SOV", "DOR-SOV"]}
+      ],
+      "match_mode": "any",
+      "hardware": {
+        "charm_type": "DO 24V DC Isolated",
+        "charm_part_no": "SE4302T02",
+        "terminal_block": "Fused-Injected-Power Terminal Block",
+        "charm_tb_part_no": "SE4502",
+        "charm_tb_terminals": "-, 2, 4"
+      }
+    }
+  },
+  {
+    "id": "R-MAP-04",
+    "name": "CHARM & TB Mapping: Relay Output DO",
+    "enabled": true,
+    "kind": "charm_terminal_map",
+    "severity": "hard",
+    "weight": 100,
+    "scope": "signal",
+    "params": {
+      "type_check": {"column": "signal_type", "operator": "in", "values": ["DO", "DOR"]},
+      "conditions": [
+        {"column": "instrument_type", "operator": "in", "values": ["XR", "MR"]},
+        {"column": "signal_level", "operator": "contains", "value": "relay"},
+        {"column": "description", "operator": "contains", "value": "relay"}
+      ],
+      "match_mode": "any",
+      "hardware": {
+        "charm_type": "DISCRETE OUTPUT CHARM; 24 VDC; HIGH SIDE",
+        "charm_part_no": "SE4302T01",
+        "terminal_block": "Relay Output Terminal Block",
+        "charm_tb_part_no": "SE4503",
+        "charm_tb_terminals": "1, 2"
+      }
+    }
+  },
+  {
+    "id": "R-MAP-05",
+    "name": "CHARM & TB Mapping: Standard Discrete Output (DO/DOR)",
+    "enabled": true,
+    "kind": "charm_terminal_map",
+    "severity": "hard",
+    "weight": 100,
+    "scope": "signal",
+    "params": {
+      "conditions": [
+        {"column": "signal_type", "operator": "in", "values": ["DO", "DOR"]}
+      ],
+      "match_mode": "any",
+      "hardware": {
+        "charm_type": "DISCRETE OUTPUT CHARM; 24 VDC; HIGH SIDE",
+        "charm_part_no": "SE4302T01",
+        "terminal_block": "Standard CHARM Terminal Block",
+        "charm_tb_part_no": "SE4501",
+        "charm_tb_terminals": "1, 2"
+      }
+    }
+  },
+  {
+    "id": "R-MAP-06",
+    "name": "CHARM & TB Mapping: Standard Discrete Input (DI/DIR)",
+    "enabled": true,
+    "kind": "charm_terminal_map",
+    "severity": "hard",
+    "weight": 100,
+    "scope": "signal",
+    "params": {
+      "conditions": [
+        {"column": "signal_type", "operator": "in", "values": ["DI", "DIR"]}
+      ],
+      "match_mode": "any",
+      "hardware": {
+        "charm_type": "DISCRETE INPUT CHARM; 24 VDC DRY CONTACT: LOW SIDE SENSE",
+        "charm_part_no": "SE4301T02",
+        "terminal_block": "Standard CHARM Terminal Block",
+        "charm_tb_part_no": "SE4501",
+        "charm_tb_terminals": "1, 2"
+      }
+    }
+  },
+  {
+    "id": "R-MAP-07",
+    "name": "CHARM & TB Mapping: Standard Analog Output (AO/AOR)",
+    "enabled": true,
+    "kind": "charm_terminal_map",
+    "severity": "hard",
+    "weight": 100,
+    "scope": "signal",
+    "params": {
+      "conditions": [
+        {"column": "signal_type", "operator": "in", "values": ["AO", "AOR"]}
+      ],
+      "match_mode": "any",
+      "hardware": {
+        "charm_type": "AO 4-20 MA HART CHARM",
+        "charm_part_no": "SE4304T01",
+        "terminal_block": "Standard CHARM Terminal Block",
+        "charm_tb_part_no": "SE4501",
+        "charm_tb_terminals": "1, 2"
+      }
+    }
+  },
+  {
+    "id": "R-MAP-08",
+    "name": "CHARM & TB Mapping: Standard Analog Input (AI/AIR)",
+    "enabled": true,
+    "kind": "charm_terminal_map",
+    "severity": "hard",
+    "weight": 100,
+    "scope": "signal",
+    "params": {
+      "conditions": [
+        {"column": "signal_type", "operator": "in", "values": ["AI", "AIR"]}
+      ],
+      "match_mode": "any",
+      "hardware": {
+        "charm_type": "AI 4-20 MA HART CHARM",
+        "charm_part_no": "SE4303T01",
+        "terminal_block": "Standard CHARM Terminal Block",
+        "charm_tb_part_no": "SE4501",
+        "charm_tb_terminals": "1, 2"
+      }
+    }
+  },
+  {
+    "id": "R-MAP-09",
+    "name": "CHARM & TB Mapping: Thermocouple / mV",
+    "enabled": true,
+    "kind": "charm_terminal_map",
+    "severity": "hard",
+    "weight": 100,
+    "scope": "signal",
+    "params": {
+      "conditions": [
+        {"column": "signal_type", "operator": "in", "values": ["TC", "MV"]}
+      ],
+      "match_mode": "any",
+      "hardware": {
+        "charm_type": "Thermocouple / mV CHARM",
+        "charm_part_no": "SE4303T02",
+        "terminal_block": "TC Cold-Junction Terminal Block",
+        "charm_tb_part_no": "SE4501",
+        "charm_tb_terminals": "1, 2"
+      }
+    }
+  },
+  {
+    "id": "R-MAP-10",
+    "name": "CHARM & TB Mapping: Spare Slot Protection",
+    "enabled": true,
+    "kind": "charm_terminal_map",
+    "severity": "hard",
+    "weight": 100,
+    "scope": "spare_slot",
+    "params": {
+      "hardware": {
+        "charm_type": "CHARM PROTECTION COVER",
+        "charm_part_no": "SE6103",
+        "terminal_block": "Standard CHARM Terminal Block",
+        "charm_tb_part_no": "SE4501",
+        "charm_tb_terminals": "-"
+      }
+    }
+  }
+]
