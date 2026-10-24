@@ -30,6 +30,36 @@ function getGroqClientKey(): string {
   }
 }
 
+function redactProjectData(text: string): { redactedText: string; tagMap: Map<string, string> } {
+  const tagMap = new Map<string, string>();
+  let counter = 1;
+  const tagRegex = /\b(\d{2,3}-[A-Z]+(?:\s*-\s*\d+)?|[A-Z]{2,4}-\d{3,5})\b/g;
+  const redactedText = text.replace(tagRegex, (match) => {
+    let key = '';
+    for (const [k, v] of tagMap.entries()) {
+      if (v === match) {
+        key = k;
+        break;
+      }
+    }
+    if (!key) {
+      key = `[TAG_${String(counter).padStart(3, '0')}]`;
+      tagMap.set(key, match);
+      counter++;
+    }
+    return key;
+  });
+  return { redactedText, tagMap };
+}
+
+function unredactText(text: string, tagMap: Map<string, string>): string {
+  let unredacted = text;
+  tagMap.forEach((realTag, placeholder) => {
+    unredacted = unredacted.split(placeholder).join(realTag);
+  });
+  return unredacted;
+}
+
 async function callGroqDirect(
   msgs: ChatMessage[],
   project: any,
@@ -56,11 +86,19 @@ Current Project Telemetry:
 - Current ${riskSummary}
 
 Your Mission:
-Answer the user's questions with authoritative, precise, professional industrial DCS expertise. Use clean Markdown, bold headers, and bullet points. When asked about alternate allocations, rule changes, or risks, provide concrete engineering analysis based on DeltaV constraints.`;
+Answer the user's questions with authoritative, precise, professional industrial DCS expertise. Use clean Markdown, bold headers, and bullet points. When asked about alternate allocations, rule changes, or risks, provide concrete engineering analysis based on DeltaV constraints. Note: User inputs have been redacted with [TAG_XXX] tokens to preserve confidentiality; use the same tokens in your response where appropriate.`;
+
+  // Apply privacy redaction to chat messages before transmitting outside plant
+  const combinedTagMap = new Map<string, string>();
+  const redactedMessages = msgs.slice(-6).map((m) => {
+    const { redactedText, tagMap } = redactProjectData(m.content);
+    tagMap.forEach((v, k) => combinedTagMap.set(k, v));
+    return { role: m.role, content: redactedText };
+  });
 
   const messagesPayload = [
     { role: 'system', content: systemPrompt },
-    ...msgs.slice(-6).map((m) => ({ role: m.role, content: m.content }))
+    ...redactedMessages
   ];
 
   try {
@@ -81,7 +119,7 @@ Answer the user's questions with authoritative, precise, professional industrial
     if (res.ok) {
       const data = await res.json();
       const content = data.choices?.[0]?.message?.content;
-      if (content) return content;
+      if (content) return unredactText(content, combinedTagMap);
     }
   } catch (err) {
     console.warn('Groq primary model fetch failed, trying secondary model', err);
@@ -107,7 +145,8 @@ Answer the user's questions with authoritative, precise, professional industrial
   }
 
   const data = await resFallback.json();
-  return data.choices?.[0]?.message?.content || 'No response generated.';
+  const rawContent = data.choices?.[0]?.message?.content || 'No response generated.';
+  return unredactText(rawContent, combinedTagMap);
 }
 
 function getLocalDCSExpertResponse(userText: string, riskInfo: RiskAssessmentResponse | null): { content: string; actions?: any[] } {
@@ -171,6 +210,7 @@ export const DCSChatbot: React.FC = () => {
   const [riskInfo, setRiskInfo] = useState<RiskAssessmentResponse | null>(null);
   const [applyingSuggestionId, setApplyingSuggestionId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [privacyMode, setPrivacyMode] = useState<'cloud_redacted' | 'local_only'>('cloud_redacted');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -213,26 +253,32 @@ export const DCSChatbot: React.FC = () => {
 
     let assistantContent = '';
 
-    // Step 1: Try backend /api/chat
-    try {
-      const res = await api.sendChatMessage({
-        project_id: currentProject?.id,
-        revision_id: currentRevision?.id,
-        messages: newMsgs,
-        context_page: window.location.pathname
-      });
-      assistantContent = res.message.content;
-    } catch (backendErr) {
-      console.info('Backend /api/chat unreachable, engaging direct Groq LLM API:', backendErr);
-      // Step 2: Call Groq API directly from browser
+    if (privacyMode === 'local_only') {
+      // 100% On-Premise Air-Gapped execution: zero network calls outside local browser
+      const fallback = getLocalDCSExpertResponse(textToSend, riskInfo);
+      assistantContent = fallback.content;
+    } else {
+      // Step 1: Try backend /api/chat
       try {
-        const groqAnswer = await callGroqDirect(newMsgs, currentProject, currentRevision, riskInfo);
-        assistantContent = groqAnswer;
-      } catch (groqErr) {
-        console.warn('Groq direct fetch failed, engaging local DCS expert fallback:', groqErr);
-        // Step 3: Local DCS expert fallback
-        const fallback = getLocalDCSExpertResponse(textToSend, riskInfo);
-        assistantContent = fallback.content;
+        const res = await api.sendChatMessage({
+          project_id: currentProject?.id,
+          revision_id: currentRevision?.id,
+          messages: newMsgs,
+          context_page: window.location.pathname
+        });
+        assistantContent = res.message.content;
+      } catch (backendErr) {
+        console.info('Backend /api/chat unreachable, engaging direct Groq LLM API with Privacy Redaction:', backendErr);
+        // Step 2: Call Groq API directly from browser with Privacy Redaction
+        try {
+          const groqAnswer = await callGroqDirect(newMsgs, currentProject, currentRevision, riskInfo);
+          assistantContent = groqAnswer;
+        } catch (groqErr) {
+          console.warn('Groq direct fetch failed, engaging local DCS expert fallback:', groqErr);
+          // Step 3: Local DCS expert fallback
+          const fallback = getLocalDCSExpertResponse(textToSend, riskInfo);
+          assistantContent = fallback.content;
+        }
       }
     }
 
@@ -323,9 +369,13 @@ export const DCSChatbot: React.FC = () => {
               <div>
                 <div className="flex items-center space-x-2">
                   <h3 className="text-sm font-bold tracking-tight">DeltaV Engineering Copilot</h3>
-                  <span className="text-[9px] font-mono font-semibold px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 rounded border border-emerald-400/30 flex items-center space-x-1">
+                  <span className={`text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded border flex items-center space-x-1 ${
+                    privacyMode === 'cloud_redacted'
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30'
+                      : 'bg-indigo-500/20 text-indigo-300 border-indigo-400/30'
+                  }`}>
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    <span>Groq LLM Live</span>
+                    <span>{privacyMode === 'cloud_redacted' ? 'Groq Cloud AI' : 'Local Air-Gapped'}</span>
                   </span>
                 </div>
                 <p className="text-[10px] text-slate-400">
@@ -348,6 +398,33 @@ export const DCSChatbot: React.FC = () => {
                 title="Close Assistant"
               >
                 <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Privacy & Mode Selector Bar */}
+          <div className="bg-slate-800/95 text-white px-3 py-1.5 flex items-center justify-between text-[10px] border-b border-slate-700">
+            <span className="text-slate-300 font-medium">
+              {privacyMode === 'cloud_redacted' ? '🔒 Plant Privacy Redaction: Active' : '🛡️ On-Premise Mode: Air-Gapped (Zero Net)'}
+            </span>
+            <div className="flex items-center space-x-1 bg-slate-900 p-0.5 rounded border border-slate-700">
+              <button
+                type="button"
+                onClick={() => setPrivacyMode('cloud_redacted')}
+                className={`px-1.5 py-0.5 rounded text-[9px] font-bold transition-colors ${
+                  privacyMode === 'cloud_redacted' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Cloud (Redacted)
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrivacyMode('local_only')}
+                className={`px-1.5 py-0.5 rounded text-[9px] font-bold transition-colors ${
+                  privacyMode === 'local_only' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Local Only
               </button>
             </div>
           </div>

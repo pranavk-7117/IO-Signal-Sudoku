@@ -299,3 +299,83 @@ export interface ChatResponse {
   }>;
   model_used?: string;
 }
+
+export interface CounterfactualCheck {
+  rule: string;
+  passed: boolean;
+  message: string;
+  severity?: 'hard' | 'soft' | 'info';
+}
+
+export interface CounterfactualResponse {
+  tag: string;
+  target?: {
+    cabinet: string;
+    cioc: string;
+    baseplate: string;
+    channel: number;
+  };
+  is_allowed: boolean;
+  blocking_reasons: string[];
+  rule_checks: CounterfactualCheck[];
+  verdict: string;
+}
+
+export interface BlastRadiusSignal {
+  tag: string;
+  loop_name: string;
+  signal_type: string;
+  redundancy: string;
+  hardware_location: string;
+  status: 'PROTECTED' | 'TRIPPED';
+  resilience_detail: string;
+}
+
+export interface BlastRadiusResponse {
+  failure_type: 'cioc' | 'cabinet' | 'power_bus';
+  target_id: string;
+  total_channels_lost: number;
+  protected_channels_count: number;
+  tripped_channels_count: number;
+  resilience_score_pct: number;
+  resilience_rating: string;
+  impact_summary: string;
+  affected_signals: BlastRadiusSignal[];
+}
+
+export interface PreflightCheck {
+  id: string;
+  title: string;
+  status: 'PASS' | 'WARN' | 'FAIL';
+  severity: 'INFO' | 'HIGH' | 'CRITICAL';
+  summary: string;
+  guide_reference: string;
+  remedy?: string;
+  affected_items?: string[];
+}
+
+export interface PreflightLintResponse {
+  health_score: number;
+  overall_status: 'EXCELLENT' | 'NEEDS_ATTENTION' | 'NON_COMPLIANT';
+  critical_fails_count: number;
+  warnings_count: number;
+  total_checks: number;
+  checks: PreflightCheck[];
+}
+
+export interface ScorecardItem {
+  category: string;
+  expected: number;
+  actual: number;
+  matched: boolean;
+  notes: string;
+}
+
+export interface ReferenceScorecardResponse {
+  reference_file: string;
+  parity_score_pct: number;
+  overall_status: string;
+  matched_categories: number;
+  total_categories: number;
+  scorecard_items: ScorecardItem[];
+}

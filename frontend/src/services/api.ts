@@ -2,7 +2,9 @@ import {
   Project, Revision, HardwareConfig, ProjectRule, Assignment,
   ValidationSummary, TechnicalQuery, UtilisationSummary,
   RevisionComparison, AuditLog,
-  RiskAssessmentResponse, ChatRequest, ChatResponse
+  RiskAssessmentResponse, ChatRequest, ChatResponse,
+  CounterfactualResponse, BlastRadiusResponse,
+  PreflightLintResponse, ReferenceScorecardResponse
 } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
@@ -384,6 +386,74 @@ export const api = {
       const err = await res.json();
       throw new Error(err.detail || 'Failed to communicate with AI Assistant');
     }
+    return res.json();
+  },
+
+  // "Why Not Here?" Counterfactual Engine
+  evaluateCounterfactual: async (
+    projectId: number,
+    payload: {
+      tag: string;
+      target_cabinet: string;
+      target_cioc: string;
+      target_baseplate: string;
+      target_channel: number;
+    },
+    revisionId?: number
+  ): Promise<CounterfactualResponse> => {
+    const url = revisionId
+      ? `${API_BASE}/projects/${projectId}/counterfactual?revision_id=${revisionId}`
+      : `${API_BASE}/projects/${projectId}/counterfactual`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Failed to evaluate counterfactual');
+    }
+    return res.json();
+  },
+
+  // Failure Blast-Radius Simulator
+  simulateBlastRadius: async (
+    projectId: number,
+    payload: { failure_type: string; target_id: string },
+    revisionId?: number
+  ): Promise<BlastRadiusResponse> => {
+    const url = revisionId
+      ? `${API_BASE}/projects/${projectId}/blast-radius?revision_id=${revisionId}`
+      : `${API_BASE}/projects/${projectId}/blast-radius`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Failed to simulate blast radius');
+    }
+    return res.json();
+  },
+
+  // Pre-flight Doctor Lint
+  getPreflightLint: async (projectId: number, revisionId?: number): Promise<PreflightLintResponse> => {
+    const url = revisionId
+      ? `${API_BASE}/projects/${projectId}/preflight-lint?revision_id=${revisionId}`
+      : `${API_BASE}/projects/${projectId}/preflight-lint`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Failed to fetch preflight lint');
+    return res.json();
+  },
+
+  // Reference Scorecard Parity
+  getReferenceScorecard: async (projectId: number, revisionId?: number): Promise<ReferenceScorecardResponse> => {
+    const url = revisionId
+      ? `${API_BASE}/projects/${projectId}/reference-scorecard?revision_id=${revisionId}`
+      : `${API_BASE}/projects/${projectId}/reference-scorecard`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Failed to fetch reference scorecard');
     return res.json();
   }
 };

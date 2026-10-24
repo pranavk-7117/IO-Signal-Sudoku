@@ -31,6 +31,8 @@ from engine.revision_comparator import RevisionComparator
 from engine.explainability import ExplainabilityEngine
 from engine.risk_engine import RiskEngine
 from engine.chatbot import ChatbotService
+from engine.counterfactual_engine import CounterfactualEngine, BlastRadiusSimulator
+from engine.preflight_lint import PreflightLintDoctor, ReferenceScorecardEngine
 from demo_data import seed_demo_project, SAMPLE_DIR
 
 if os.environ.get("VERCEL"):
@@ -760,6 +762,99 @@ def handle_chat_query(req: ChatRequest):
         risk_info=risk_info,
         validation_summary=val_summary
     )
+
+# --- "Why Not Here?" Counterfactual Engine ---
+@app.post("/api/projects/{project_id}/counterfactual")
+def evaluate_counterfactual(
+    project_id: int,
+    payload: Dict[str, Any],
+    revision_id: Optional[int] = None
+):
+    if not revision_id:
+        revs = DBService.get_revisions(project_id)
+        active_rev = next((r for r in revs if r["is_active"]), revs[0] if revs else None)
+        if not active_rev:
+            raise HTTPException(status_code=404, detail="No revision found")
+        revision_id = active_rev["id"]
+
+    hw_config = DBService.get_hardware_config(project_id, revision_id)
+    signals = DBService.get_imported_signals(project_id, revision_id)
+    assignments = DBService.get_assignments(project_id, revision_id)
+
+    tag = payload.get("tag", "")
+    target_cab = payload.get("target_cabinet", "")
+    target_cioc = payload.get("target_cioc", "")
+    target_bp = payload.get("target_baseplate", "")
+    target_ch = int(payload.get("target_channel", 1))
+
+    return CounterfactualEngine.evaluate_why_not_here(
+        config=hw_config,
+        signals=signals,
+        assignments=assignments,
+        tag=tag,
+        target_cabinet=target_cab,
+        target_cioc=target_cioc,
+        target_baseplate=target_bp,
+        target_channel=target_ch
+    )
+
+# --- Failure Blast-Radius Simulator ---
+@app.post("/api/projects/{project_id}/blast-radius")
+def simulate_blast_radius(
+    project_id: int,
+    payload: Dict[str, Any],
+    revision_id: Optional[int] = None
+):
+    if not revision_id:
+        revs = DBService.get_revisions(project_id)
+        active_rev = next((r for r in revs if r["is_active"]), revs[0] if revs else None)
+        if not active_rev:
+            raise HTTPException(status_code=404, detail="No revision found")
+        revision_id = active_rev["id"]
+
+    hw_config = DBService.get_hardware_config(project_id, revision_id)
+    signals = DBService.get_imported_signals(project_id, revision_id)
+    assignments = DBService.get_assignments(project_id, revision_id)
+
+    failure_type = payload.get("failure_type", "cioc")
+    target_id = payload.get("target_id", "")
+
+    return BlastRadiusSimulator.simulate_hardware_failure(
+        config=hw_config,
+        signals=signals,
+        assignments=assignments,
+        failure_type=failure_type,
+        target_id=target_id
+    )
+
+# --- Preflight Doctor / Allocation Lint ---
+@app.get("/api/projects/{project_id}/preflight-lint")
+def run_preflight_lint(project_id: int, revision_id: Optional[int] = None):
+    if not revision_id:
+        revs = DBService.get_revisions(project_id)
+        active_rev = next((r for r in revs if r["is_active"]), revs[0] if revs else None)
+        if not active_rev:
+            raise HTTPException(status_code=404, detail="No revision found")
+        revision_id = active_rev["id"]
+
+    hw_config = DBService.get_hardware_config(project_id, revision_id)
+    signals = DBService.get_imported_signals(project_id, revision_id)
+    assignments = DBService.get_assignments(project_id, revision_id)
+
+    return PreflightLintDoctor.run_preflight_checks(hw_config, signals, assignments)
+
+# --- Official Reference-Comparison Scorecard ---
+@app.get("/api/projects/{project_id}/reference-scorecard")
+def get_reference_scorecard(project_id: int, revision_id: Optional[int] = None):
+    if not revision_id:
+        revs = DBService.get_revisions(project_id)
+        active_rev = next((r for r in revs if r["is_active"]), revs[0] if revs else None)
+        if not active_rev:
+            raise HTTPException(status_code=404, detail="No revision found")
+        revision_id = active_rev["id"]
+
+    assignments = DBService.get_assignments(project_id, revision_id)
+    return ReferenceScorecardEngine.generate_scorecard(assignments)
 
 # --- Audit Logs & Demo Seed ---
 @app.get("/api/audit-logs/{project_id}", response_model=List[AuditLogModel])

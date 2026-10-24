@@ -16,6 +16,7 @@ import {
   HelpCircle
 } from 'lucide-react';
 import { ExplainabilityDrawer } from '../components/ExplainabilityDrawer';
+import { CounterfactualModal } from '../components/CounterfactualModal';
 import { useProject } from '../context/ProjectContext';
 import { api } from '../services/api';
 import { Assignment } from '../types';
@@ -35,13 +36,14 @@ export const AllocationWorkspacePage: React.FC = () => {
   const [sortCol, setSortCol] = useState<string>('tag');
   const [sortAsc, setSortAsc] = useState<boolean>(true);
   const [explainingTag, setExplainingTag] = useState<string | null>(null);
+  const [counterfactualTag, setCounterfactualTag] = useState<string | null>(null);
 
   // Manual Override State
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const [showOverrideModal, setShowOverrideModal] = useState(false);
-  const [overrideCab, setOverrideCab] = useState('CAB-01');
-  const [overrideCIOC, setOverrideCIOC] = useState('CIOC-01');
-  const [overrideBP, setOverrideBP] = useState('BP-01');
+  const [overrideCab, setOverrideCab] = useState('P30-DCS-32001-01');
+  const [overrideCIOC, setOverrideCIOC] = useState('P30DCIOC3201001');
+  const [overrideBP, setOverrideBP] = useState('001-CBP-1');
   const [overrideCharm, setOverrideCharm] = useState(1);
   const [overrideError, setOverrideError] = useState<string | null>(null);
 
@@ -95,9 +97,9 @@ export const AllocationWorkspacePage: React.FC = () => {
 
   const openOverride = (a: Assignment) => {
     setSelectedAssignment(a);
-    setOverrideCab(a.cabinet_id || 'CAB-01');
-    setOverrideCIOC(a.cioc_id || 'CIOC-01');
-    setOverrideBP(a.baseplate_id || 'BP-01');
+    setOverrideCab(a.cabinet_id || 'P30-DCS-32001-01');
+    setOverrideCIOC(a.cioc_id || 'P30DCIOC3201001');
+    setOverrideBP(a.baseplate_id || '001-CBP-1');
     setOverrideCharm(a.charm_index || 1);
     setOverrideError(null);
     setShowOverrideModal(true);
@@ -382,12 +384,21 @@ export const AllocationWorkspacePage: React.FC = () => {
                           <span>Why here?</span>
                         </button>
                         <button
+                          onClick={() => setCounterfactualTag(a.tag)}
+                          className="px-2 py-1 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded border border-indigo-200 text-[11px] font-semibold transition-colors flex items-center space-x-1 cursor-pointer whitespace-nowrap"
+                          title="Counterfactual: Test why candidate slots are allowed or blocked for this signal"
+                        >
+                          <HelpCircle className="w-3.5 h-3.5" />
+                          <span>Why not here?</span>
+                        </button>
+                        <button
                           onClick={() => openOverride(a)}
                           className="px-2 py-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded border border-slate-200 text-[11px] font-semibold transition-colors cursor-pointer whitespace-nowrap"
                           title="Manual Reassignment"
                         >
                           Reassign
                         </button>
+
                       </div>
                     </td>
                   </tr>
@@ -443,8 +454,10 @@ export const AllocationWorkspacePage: React.FC = () => {
                     onChange={(e) => setOverrideCab(e.target.value)}
                     className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-md bg-white focus:outline-hidden"
                   >
-                    <option value="CAB-01">CAB-01</option>
-                    <option value="CAB-02">CAB-02</option>
+                    {['P30-DCS-32001-01', 'P30-DCS-32001-02', 'P24-DCS-50002-01'].map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+
                   </select>
                 </div>
                 <div>
@@ -454,10 +467,16 @@ export const AllocationWorkspacePage: React.FC = () => {
                     onChange={(e) => setOverrideCIOC(e.target.value)}
                     className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-md bg-white focus:outline-hidden"
                   >
-                    <option value="CIOC-01">CIOC-01</option>
-                    <option value="CIOC-02">CIOC-02</option>
-                    <option value="CIOC-03">CIOC-03</option>
-                    <option value="CIOC-04">CIOC-04</option>
+                    {[
+                      'P30DCIOC3201001', 'P30DCIOC3201002', 'P30DCIOC3201003', 'P30DCIOC3201004',
+                      'P30DCIOC3201005', 'P30DCIOC3201006', 'P30DCIOC3201007', 'P30DCIOC3201008',
+                      'P24DCIOC5002001', 'P24DCIOC5002002', 'P24DCIOC5002003', 'P24DCIOC5002004'
+                    ].map((ci) => (
+                      <option key={ci} value={ci}>{ci}</option>
+                    ))}
+
+
+
                   </select>
                 </div>
               </div>
@@ -471,7 +490,7 @@ export const AllocationWorkspacePage: React.FC = () => {
                     className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-md bg-white focus:outline-hidden"
                   >
                     {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
-                      <option key={n} value={`BP-0${n}`}>{`BP-0${n}`}</option>
+                      <option key={n} value={`001-CBP-${n}`}>{`001-CBP-${n}`}</option>
                     ))}
                   </select>
                 </div>
@@ -506,6 +525,14 @@ export const AllocationWorkspacePage: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+      {counterfactualTag && currentProject && (
+        <CounterfactualModal
+          projectId={currentProject.id}
+          revisionId={currentRevision?.id}
+          initialTag={counterfactualTag}
+          onClose={() => setCounterfactualTag(null)}
+        />
       )}
     </div>
   );
