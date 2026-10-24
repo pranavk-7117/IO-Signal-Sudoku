@@ -1,3 +1,4 @@
+import re
 from engine.mapping_engine import MappingEngine
 from rules import RedundancyNormalizer, HardwareSystemConfig
 import os
@@ -200,16 +201,43 @@ class ExcelHandler:
         red_col = mapping.get("redundancy")
         group_col = mapping.get("logical_group")
 
+        if not tag_col:
+            raise ValueError("Tag column mapping is required")
+        if not type_col:
+            raise ValueError("Signal Type column mapping is required")
+
         for idx, row in df.iterrows():
-            tag_val = str(row[tag_col]).strip() if tag_col and tag_col in row and pd.notna(row[tag_col]) else ""
-            if not tag_val or tag_val.lower() == "nan":
+            if row.isna().all():
                 continue
 
-            type_val = str(row[type_col]).strip().upper() if type_col and type_col in row and pd.notna(row[type_col]) else "UNKNOWN"
+            tag_val = str(row[tag_col]).strip() if tag_col in row and pd.notna(row[tag_col]) else ""
+            if tag_val.lower() == "nan":
+                tag_val = ""
+
+            type_val = str(row[type_col]).strip().upper() if type_col in row and pd.notna(row[type_col]) else "UNKNOWN"
+            if type_val.lower() == "nan":
+                type_val = "UNKNOWN"
+
             desc_val = str(row[desc_col]).strip() if desc_col and desc_col in row and pd.notna(row[desc_col]) else ""
             cable_val = str(row[cable_col]).strip() if cable_col and cable_col in row and pd.notna(row[cable_col]) else ""
-            
-            pair_val = MappingEngine.parse_pair_number(row[pair_col]) if pair_col and pair_col in row else None
+
+            # If all mapped columns are empty, skip row
+            if not tag_val and type_val == "UNKNOWN" and not desc_val and not cable_val and (not pair_col or pair_col not in row or pd.isna(row[pair_col])):
+                continue
+
+            pair_val = None
+            pair_invalid = False
+            if pair_col and pair_col in row and pd.notna(row[pair_col]):
+                pair_text = str(row[pair_col]).strip()
+                match = re.fullmatch(r"(?:pair\s*|p)?(\d+)", pair_text, flags=re.IGNORECASE)
+                if match:
+                    pair_val = int(match.group(1))
+                    if pair_val < 1:
+                        pair_val = None
+                        pair_invalid = True
+                else:
+                    pair_invalid = True
+
             _cfg = HardwareSystemConfig()
             raw_red = str(row[red_col]).strip() if red_col and red_col in row and pd.notna(row[red_col]) else ""
             red_val = RedundancyNormalizer.normalize(raw_red, _cfg.redundancy_mappings) or ""
@@ -225,6 +253,9 @@ class ExcelHandler:
             if type_val == "UNKNOWN":
                 is_valid = False
                 errors.append("Missing signal type")
+            if pair_invalid:
+                is_valid = False
+                errors.append(f"Malformed wire pair value: {row[pair_col]!r}")
 
             # Check for extra DeltaV metadata in customer columns
             inst_type = ""
