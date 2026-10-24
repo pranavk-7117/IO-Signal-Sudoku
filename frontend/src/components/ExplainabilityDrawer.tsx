@@ -67,7 +67,7 @@ export const ExplainabilityDrawer: React.FC<ExplainabilityDrawerProps> = ({
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <span className="font-mono text-sm font-bold text-white tracking-wide">{tag}</span>
+                <span className="font-mono text-sm font-bold text-white tracking-wide">{tag.replace(/\s+/g, ' ')}</span>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30">
                   EXPLAINABILITY ENGINE
                 </span>
@@ -152,8 +152,8 @@ export const ExplainabilityDrawer: React.FC<ExplainabilityDrawerProps> = ({
                 </div>
 
                 <div className="text-[11px] font-mono text-slate-600 bg-white p-2.5 rounded-lg border border-slate-200 flex items-center justify-between">
-                  <span>Wiring Terminals: <strong className="text-slate-900">{data.allocation.charm_tb_terminals || '1, 2'}</strong></span>
-                  <span>Terminal Block: <strong className="text-slate-900">{data.allocation.terminal_block || 'Standard CHARM TB'}</strong></span>
+                  <span>Wiring Terminals: <strong className="text-slate-900">{data.allocation.charm_tb_terminals || data.hardware_attribution?.charm_tb_terminals || '1, 2'}</strong></span>
+                  <span>Terminal Block: <strong className="text-slate-900">{data.allocation.terminal_block || data.hardware_attribution?.terminal_block || 'Standard CHARM Terminal Block'}</strong></span>
                 </div>
               </div>
 
@@ -179,8 +179,8 @@ export const ExplainabilityDrawer: React.FC<ExplainabilityDrawerProps> = ({
                   {data.hardware_attribution?.explanation}
                 </p>
                 <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono pt-1">
-                  <span>CHARM Part: <strong className="text-slate-800">{data.allocation.charm_part_no}</strong></span>
-                  <span>TB Part: <strong className="text-slate-800">{data.allocation.charm_tb_part_no}</strong></span>
+                  <span>CHARM Part: <strong className="text-slate-800">{data.allocation.charm_part_no || data.hardware_attribution?.charm_part_no || 'SE4301T02'}</strong></span>
+                  <span>TB Part: <strong className="text-slate-800">{data.allocation.charm_tb_part_no || data.hardware_attribution?.charm_tb_part_no || 'SE4501'}</strong></span>
                 </div>
               </div>
 
@@ -194,7 +194,7 @@ export const ExplainabilityDrawer: React.FC<ExplainabilityDrawerProps> = ({
                     <div>
                       <h4 className="text-xs font-bold text-slate-900">A/B Redundancy CIOC Separation (R-002)</h4>
                       <span className="text-[10px] font-mono text-purple-600">
-                        Designation: {data.redundancy_attribution?.designated_train}
+                        Designation: {data.redundancy_attribution?.designated_train || 'Simplex'}
                       </span>
                     </div>
                   </div>

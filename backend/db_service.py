@@ -641,11 +641,14 @@ class DBService:
             cursor.execute("""
                 INSERT INTO allocation_assignments (
                     project_id, revision_id, signal_id, tag, cabinet_id, cioc_id, baseplate_id,
-                    charm_index, terminal_block, charm_type, status, reason, is_manual_override, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    channel_no, charm_index, charm_no, charm_part_no, charm_tb_part_no, terminal_block,
+                    charm_tb_terminals, charm_type, tag_status, status, reason, is_manual_override, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """, (
                 project_id, revision_id, a.signal_id, a.tag, a.cabinet_id, a.cioc_id, a.baseplate_id,
-                a.charm_index, a.terminal_block, a.charm_type, a.status, a.reason,
+                a.channel_no or a.charm_index, a.charm_index, a.charm_no or a.charm_index,
+                a.charm_part_no, a.charm_tb_part_no, a.terminal_block, a.charm_tb_terminals,
+                a.charm_type, a.tag_status or 'Field', a.status, a.reason,
                 1 if a.is_manual_override else 0, now
             ))
 
@@ -679,6 +682,7 @@ class DBService:
         rows = cursor.fetchall()
         results = []
         for r in rows:
+            keys = r.keys()
             results.append(AssignmentModel(
                 id=r["id"],
                 signal_id=r["signal_id"],
@@ -692,9 +696,15 @@ class DBService:
                 cabinet_id=r["cabinet_id"],
                 cioc_id=r["cioc_id"],
                 baseplate_id=r["baseplate_id"],
+                channel_no=r["channel_no"] if "channel_no" in keys and r["channel_no"] is not None else r["charm_index"],
                 charm_index=r["charm_index"],
+                charm_no=r["charm_no"] if "charm_no" in keys and r["charm_no"] is not None else r["charm_index"],
+                charm_part_no=r["charm_part_no"] if "charm_part_no" in keys else None,
+                charm_tb_part_no=r["charm_tb_part_no"] if "charm_tb_part_no" in keys else None,
+                charm_tb_terminals=r["charm_tb_terminals"] if "charm_tb_terminals" in keys else None,
                 terminal_block=r["terminal_block"],
                 charm_type=r["charm_type"],
+                tag_status=r["tag_status"] if "tag_status" in keys and r["tag_status"] else "Field",
                 status=r["status"],
                 reason=r["reason"],
                 is_manual_override=bool(r["is_manual_override"])

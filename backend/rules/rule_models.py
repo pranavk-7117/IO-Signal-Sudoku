@@ -82,6 +82,8 @@ class RedundancyNormalizer:
         if not val or not str(val).strip():
             return None
         v = str(val).strip().upper()
+        if v in ["-", "N/A", "NA", "NONE", "NON-REDUNDANT", "SIMPLEX", "SINGLE", "NOT APPLICABLE", "NULL"]:
+            return None
         for norm_label, aliases in mappings.items():
             if v == norm_label:
                 return norm_label
@@ -89,8 +91,8 @@ class RedundancyNormalizer:
                 if v == alias.upper() or v.startswith(alias.upper()):
                     return norm_label
         # Fallback heuristic
-        if "A" in v and "B" not in v:
+        if "A" in v and "B" not in v and len(v) <= 15:
             return "A"
-        if "B" in v and "A" not in v:
+        if "B" in v and "A" not in v and len(v) <= 15:
             return "B"
-        return v
+        return None

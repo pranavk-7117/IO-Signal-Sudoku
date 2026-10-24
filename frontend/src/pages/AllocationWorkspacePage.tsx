@@ -261,7 +261,7 @@ export const AllocationWorkspacePage: React.FC = () => {
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200 select-none">
+            <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200 select-none whitespace-nowrap">
               <tr>
                 <th onClick={() => handleSort('tag')} className="py-2.5 px-3 cursor-pointer hover:bg-slate-200">
                   <div className="flex items-center space-x-1">
@@ -332,8 +332,8 @@ export const AllocationWorkspacePage: React.FC = () => {
                       a.status === 'Blocked' ? 'bg-rose-50/30' : a.status === 'Needs Review' ? 'bg-amber-50/20' : ''
                     }`}
                   >
-                    <td onClick={() => setExplainingTag(a.tag)} className="py-2.5 px-3 font-mono font-bold text-blue-700 hover:underline cursor-pointer" title="Click to see: Why is it here?">{a.tag}</td>
-                    <td className="py-2.5 px-3">
+                    <td onClick={() => setExplainingTag(a.tag)} className="py-2.5 px-3 font-mono font-bold text-blue-700 hover:underline cursor-pointer whitespace-nowrap" title="Click to see: Why is it here?">{a.tag}</td>
+                    <td className="py-2.5 px-3 whitespace-nowrap">
                       <span className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
                         {a.signal_type}
                       </span>
@@ -341,41 +341,41 @@ export const AllocationWorkspacePage: React.FC = () => {
                     <td className="py-2.5 px-3 text-slate-600 truncate max-w-xs" title={a.description}>
                       {a.description}
                     </td>
-                    <td className="py-2.5 px-3 font-mono text-slate-700">
+                    <td className="py-2.5 px-3 font-mono text-slate-700 whitespace-nowrap">
                       {a.cable_id ? `${a.cable_id} P${a.pair_number || 1}` : '—'}
                     </td>
-                    <td className="py-2.5 px-3">
-                      {a.redundancy ? (
+                    <td className="py-2.5 px-3 whitespace-nowrap">
+                      {a.redundancy && a.redundancy !== '-' ? (
                         <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-50 text-purple-700 border border-purple-200">
                           {a.redundancy}
                         </span>
                       ) : (
-                        <span className="text-slate-300">—</span>
+                        <span className="text-slate-400 text-[11px]">—</span>
                       )}
                     </td>
-                    <td className="py-2.5 px-3 font-mono font-semibold text-slate-800">
+                    <td className="py-2.5 px-3 font-mono font-semibold text-slate-800 whitespace-nowrap">
                       {a.cabinet_id || <span className="text-slate-400">—</span>}
                     </td>
-                    <td className="py-2.5 px-3 font-mono text-slate-800">
+                    <td className="py-2.5 px-3 font-mono text-slate-800 whitespace-nowrap">
                       {a.cioc_id || <span className="text-slate-400">—</span>}
                     </td>
-                    <td className="py-2.5 px-3 font-mono text-slate-800">
+                    <td className="py-2.5 px-3 font-mono text-slate-800 whitespace-nowrap">
                       {a.baseplate_id || <span className="text-slate-400">—</span>}
                     </td>
-                    <td className="py-2.5 px-3 font-mono font-bold text-blue-600">
+                    <td className="py-2.5 px-3 font-mono font-bold text-blue-600 whitespace-nowrap">
                       {a.charm_index ? `CH${String(a.charm_index).padStart(2, '0')}` : <span className="text-slate-400">—</span>}
                     </td>
-                    <td className="py-2.5 px-3 text-slate-600 text-[11px] truncate max-w-[140px]" title={a.terminal_block}>
+                    <td className="py-2.5 px-3 text-slate-600 text-[11px] truncate max-w-[140px] whitespace-nowrap" title={a.terminal_block}>
                       {a.terminal_block || '—'}
                     </td>
-                    <td className="py-2.5 px-3">
+                    <td className="py-2.5 px-3 whitespace-nowrap">
                       <StatusBadge status={a.status} size="sm" />
                     </td>
-                    <td className="py-2.5 px-3 text-right">
+                    <td className="py-2.5 px-3 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end space-x-1.5">
                         <button
                           onClick={() => setExplainingTag(a.tag)}
-                          className="px-2 py-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded border border-blue-200 text-[11px] font-semibold transition-colors flex items-center space-x-1 cursor-pointer"
+                          className="px-2 py-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded border border-blue-200 text-[11px] font-semibold transition-colors flex items-center space-x-1 cursor-pointer whitespace-nowrap"
                           title="Explain placement: Which rules & neighbors drove this assignment?"
                         >
                           <HelpCircle className="w-3.5 h-3.5" />
@@ -383,7 +383,7 @@ export const AllocationWorkspacePage: React.FC = () => {
                         </button>
                         <button
                           onClick={() => openOverride(a)}
-                          className="px-2 py-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded border border-slate-200 text-[11px] font-semibold transition-colors cursor-pointer"
+                          className="px-2 py-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded border border-slate-200 text-[11px] font-semibold transition-colors cursor-pointer whitespace-nowrap"
                           title="Manual Reassignment"
                         >
                           Reassign

@@ -48,6 +48,13 @@ class ExplainabilityEngine:
         # 5. Diagnostic / TQ Attribution
         diag_attribution = ExplainabilityEngine._attribute_tq(tag_clean, tqs, validation_issues)
 
+        # Resolve hardware fields with priority to alloc then hw_attribution defaults
+        resolved_charm_type = (alloc.charm_type if alloc and alloc.charm_type else hw_attribution.get("charm_type")) or "CHARM Module"
+        resolved_charm_part = (alloc.charm_part_no if alloc and alloc.charm_part_no else hw_attribution.get("charm_part_no")) or "SE4301T02"
+        resolved_tb = (alloc.terminal_block if alloc and alloc.terminal_block else hw_attribution.get("terminal_block")) or "Standard CHARM Terminal Block"
+        resolved_tb_part = (alloc.charm_tb_part_no if alloc and alloc.charm_tb_part_no else hw_attribution.get("charm_tb_part_no")) or "SE4501"
+        resolved_tb_term = (alloc.charm_tb_terminals if alloc and alloc.charm_tb_terminals else hw_attribution.get("charm_tb_terminals")) or "1, 2"
+
         # 6. Overall Narrative
         summary = ExplainabilityEngine._generate_summary(
             tag=sig.tag if sig else alloc.tag,
@@ -56,7 +63,10 @@ class ExplainabilityEngine:
             red_attr=red_attribution,
             contig_attr=contig_attribution,
             prev_attr=prev_attribution,
-            diag_attr=diag_attribution
+            diag_attr=diag_attribution,
+            resolved_charm_type=resolved_charm_type,
+            resolved_charm_part=resolved_charm_part,
+            resolved_tb=resolved_tb
         )
 
         return {
@@ -77,11 +87,11 @@ class ExplainabilityEngine:
                 "channel_no": alloc.charm_index if alloc else None,
                 "charm_index": alloc.charm_index if alloc else None,
                 "charm_no": alloc.charm_no if alloc else (alloc.charm_index if alloc else None),
-                "charm_type": alloc.charm_type if alloc else None,
-                "charm_part_no": alloc.charm_part_no if alloc else None,
-                "terminal_block": alloc.terminal_block if alloc else None,
-                "charm_tb_part_no": alloc.charm_tb_part_no if alloc else None,
-                "charm_tb_terminals": alloc.charm_tb_terminals if alloc else None,
+                "charm_type": resolved_charm_type if alloc else None,
+                "charm_part_no": resolved_charm_part if alloc else None,
+                "terminal_block": resolved_tb if alloc else None,
+                "charm_tb_part_no": resolved_tb_part if alloc else None,
+                "charm_tb_terminals": resolved_tb_term if alloc else None,
                 "status": alloc.status if alloc else "Unallocated",
                 "reason": alloc.reason if alloc else "No assignment generated"
             },
@@ -99,6 +109,12 @@ class ExplainabilityEngine:
             return {
                 "rule_id": "DEFAULT",
                 "rule_name": "Standard Module Allocation",
+                "severity": "hard",
+                "charm_type": alloc.charm_type if alloc and alloc.charm_type else "DISCRETE INPUT CHARM; 24 VDC DRY CONTACT: LOW SIDE SENSE",
+                "charm_part_no": alloc.charm_part_no if alloc and alloc.charm_part_no else "SE4301T02",
+                "terminal_block": alloc.terminal_block if alloc and alloc.terminal_block else "Standard CHARM Terminal Block",
+                "charm_tb_part_no": alloc.charm_tb_part_no if alloc and alloc.charm_tb_part_no else "SE4501",
+                "charm_tb_terminals": alloc.charm_tb_terminals if alloc and alloc.charm_tb_terminals else "1, 2",
                 "explanation": "Signal hardware was assigned from default system catalogue."
             }
 
@@ -123,21 +139,27 @@ class ExplainabilityEngine:
 
         if matched_rule:
             hw = matched_rule.params.get("hardware", {})
+            c_type = hw.get("charm_type") or (alloc.charm_type if alloc and alloc.charm_type else "DISCRETE INPUT CHARM; 24 VDC DRY CONTACT: LOW SIDE SENSE")
+            c_part = hw.get("charm_part_no") or (alloc.charm_part_no if alloc and alloc.charm_part_no else "SE4301T02")
+            tb_type = hw.get("terminal_block") or (alloc.terminal_block if alloc and alloc.terminal_block else "Standard CHARM Terminal Block")
+            tb_part = hw.get("charm_tb_part_no") or (alloc.charm_tb_part_no if alloc and alloc.charm_tb_part_no else "SE4501")
+            tb_term = hw.get("charm_tb_terminals") or (alloc.charm_tb_terminals if alloc and alloc.charm_tb_terminals else "1, 2")
+
             return {
                 "rule_id": matched_rule.id,
                 "rule_name": matched_rule.name,
                 "severity": matched_rule.severity.value if hasattr(matched_rule.severity, "value") else str(matched_rule.severity),
                 "condition_matched": f"Evaluated {len(matched_rule.params.get('conditions', []))} condition(s)",
-                "charm_type": hw.get("charm_type", alloc.charm_type if alloc else ""),
-                "charm_part_no": hw.get("charm_part_no", alloc.charm_part_no if alloc else ""),
-                "terminal_block": hw.get("terminal_block", alloc.terminal_block if alloc else ""),
-                "charm_tb_part_no": hw.get("charm_tb_part_no", alloc.charm_tb_part_no if alloc else ""),
-                "charm_tb_terminals": hw.get("charm_tb_terminals", alloc.charm_tb_terminals if alloc else ""),
+                "charm_type": c_type,
+                "charm_part_no": c_part,
+                "terminal_block": tb_type,
+                "charm_tb_part_no": tb_part,
+                "charm_tb_terminals": tb_term,
                 "explanation": (
                     f"Selected by Rule '{matched_rule.name}' ({matched_rule.id}). "
                     f"Matched signal attributes (type: {sig.signal_type}, level: {sig.signal_level or 'standard'}, "
-                    f"spec: {sig.electrical_spec or 'standard'}) -> Assigned CHARM {hw.get('charm_type')} "
-                    f"({hw.get('charm_part_no')}) with {hw.get('terminal_block')} pins {hw.get('charm_tb_terminals')}."
+                    f"spec: {sig.electrical_spec or 'standard'}) -> Assigned CHARM {c_type} "
+                    f"({c_part}) with {tb_type} pins {tb_term}."
                 )
             }
 
@@ -145,11 +167,11 @@ class ExplainabilityEngine:
             "rule_id": "R-MAP-DEFAULT",
             "rule_name": "Standard DeltaV CHARM Compatibility Matrix",
             "severity": "hard",
-            "charm_type": alloc.charm_type if alloc else "AI 4-20 MA HART CHARM",
-            "charm_part_no": alloc.charm_part_no if alloc else "SE4303T01",
-            "terminal_block": alloc.terminal_block if alloc else "Standard CHARM Terminal Block",
-            "charm_tb_part_no": alloc.charm_tb_part_no if alloc else "SE4501",
-            "charm_tb_terminals": alloc.charm_tb_terminals if alloc else "1, 2",
+            "charm_type": alloc.charm_type if alloc and alloc.charm_type else "AI 4-20 MA HART CHARM",
+            "charm_part_no": alloc.charm_part_no if alloc and alloc.charm_part_no else "SE4303T01",
+            "terminal_block": alloc.terminal_block if alloc and alloc.terminal_block else "Standard CHARM Terminal Block",
+            "charm_tb_part_no": alloc.charm_tb_part_no if alloc and alloc.charm_tb_part_no else "SE4501",
+            "charm_tb_terminals": alloc.charm_tb_terminals if alloc and alloc.charm_tb_terminals else "1, 2",
             "explanation": f"Mapped to standard {sig.signal_type} CHARM module per project compatibility catalogue."
         }
 
@@ -163,9 +185,11 @@ class ExplainabilityEngine:
         raw_red = sig.redundancy if sig else (alloc.redundancy if alloc else "")
         norm_red = evaluator.normalize_redundancy(raw_red)
 
-        if not norm_red:
+        if not norm_red or norm_red not in ["A", "B"]:
             return {
                 "rule_id": "R-002",
+                "rule_name": "A/B Redundancy CIOC Separation",
+                "severity": "hard",
                 "enforced": False,
                 "designated_train": "Simplex / Non-Redundant",
                 "partner_signals": [],
@@ -220,6 +244,8 @@ class ExplainabilityEngine:
         if not cable or cable.upper() in ["INTERNAL WIRING", "INTERNAL-WIRING", "-", "NA", "N/A"]:
             return {
                 "rule_id": "R-006",
+                "rule_name": "Internal Cabinet Wiring Segregation",
+                "severity": "hard",
                 "enforced": True,
                 "cable_id": "Internal / Cabinet Wiring",
                 "pair_number": None,
@@ -229,6 +255,8 @@ class ExplainabilityEngine:
         if not alloc or not alloc.baseplate_id or not alloc.charm_index:
             return {
                 "rule_id": "R-001",
+                "rule_name": "Cable Contiguity & Monotonic Pair Order",
+                "severity": "hard",
                 "enforced": False,
                 "cable_id": cable,
                 "pair_number": pair,
@@ -248,6 +276,7 @@ class ExplainabilityEngine:
             "rule_id": "R-001",
             "rule_name": "Cable Contiguity & Monotonic Pair Order",
             "severity": "hard",
+            "enforced": True,
             "cable_id": cable,
             "pair_number": pair,
             "baseplate_pairs_count": len(cable_pairs_on_bp),
@@ -367,7 +396,10 @@ class ExplainabilityEngine:
         red_attr: Dict[str, Any],
         contig_attr: Dict[str, Any],
         prev_attr: Dict[str, Any],
-        diag_attr: Optional[Dict[str, Any]]
+        diag_attr: Optional[Dict[str, Any]],
+        resolved_charm_type: str = "CHARM Module",
+        resolved_charm_part: str = "SE4301T02",
+        resolved_tb: str = "Standard CHARM Terminal Block"
     ) -> str:
         if diag_attr and diag_attr.get("has_tq"):
             return (
@@ -379,11 +411,18 @@ class ExplainabilityEngine:
             return f"Signal '{tag}' could not be allocated due to hardware capacity limits or unresolved constraints."
 
         pres_text = " Preserved from previous revision with 0 rewiring." if prev_attr.get("is_preserved") else ""
-        red_text = f" Segregated onto {alloc.cioc_id} for Train {red_attr.get('designated_train', 'A')} redundancy." if red_attr.get("enforced") else ""
+        
+        red_text = ""
+        if red_attr.get("enforced") and red_attr.get("designated_train"):
+            train_raw = str(red_attr.get("designated_train", "")).replace("Train", "").strip()
+            red_text = f" Segregated onto {alloc.cioc_id} for Train {train_raw} redundancy."
+
         cbl_text = f" Positioned as part of field cable {contig_attr.get('cable_id')} pair {contig_attr.get('pair_number') or 1}." if contig_attr.get("pair_number") else ""
+
+        c_part_str = f" ({resolved_charm_part})" if resolved_charm_part else ""
 
         return (
             f"Signal '{tag}' is landed at {alloc.cabinet_id} / {alloc.cioc_id} / {alloc.baseplate_id} / Slot {alloc.charm_index} "
-            f"using {alloc.charm_type} ({alloc.charm_part_no}) and {alloc.terminal_block}."
+            f"using {resolved_charm_type}{c_part_str} and {resolved_tb}."
             f"{red_text}{cbl_text}{pres_text}"
         )
