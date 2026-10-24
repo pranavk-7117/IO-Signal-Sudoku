@@ -2,9 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
+html,
+body,
+#root {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  background-color: #0B132B !important; /* Deep industrial navy matching topbar & sidebar */
+}
+
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-900 font-sans antialiased selection:bg-blue-500 selection:text-white;
+    @apply bg-[#0B132B] text-slate-900 font-sans antialiased selection:bg-blue-500 selection:text-white;
   }
 }
 

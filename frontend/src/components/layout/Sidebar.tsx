@@ -32,9 +32,9 @@ export const Sidebar: React.FC = () => {
   ];
 
   return (
-    <aside className="w-64 bg-industrial-900 border-r border-slate-800 text-slate-300 flex flex-col flex-shrink-0 h-screen select-none">
+    <aside className="w-64 bg-industrial-900 border-r border-slate-800 text-slate-300 flex flex-col shrink-0 h-full select-none">
       {/* Brand & Header */}
-      <div className="h-16 flex items-center px-5 border-b border-slate-800/80 bg-industrial-900">
+      <div className="h-16 shrink-0 flex items-center px-5 border-b border-slate-800/80 bg-industrial-900">
         <div className="flex items-center space-x-3">
           <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-blue-700 to-electric-500 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
             <Activity className="w-5 h-5" />

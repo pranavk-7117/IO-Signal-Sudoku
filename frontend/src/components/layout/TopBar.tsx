@@ -22,7 +22,7 @@ export const TopBar: React.FC = () => {
   const navigate = useNavigate();
 
   return (
-    <header className="h-16 bg-industrial-900 border-b border-slate-800 px-6 flex items-center justify-between shadow-sm sticky top-0 z-30 select-none">
+    <header className="h-16 shrink-0 bg-industrial-900 border-b border-slate-800 px-6 flex items-center justify-between shadow-sm z-30 select-none">
       {/* Left: Project & Revision Selectors */}
       <div className="flex items-center space-x-4">
         {/* Project Selector */}

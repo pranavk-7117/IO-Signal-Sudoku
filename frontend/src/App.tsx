@@ -20,17 +20,17 @@ export const App: React.FC = () => {
   return (
     <ProjectProvider>
       <BrowserRouter>
-        <div className="flex h-screen w-screen overflow-hidden bg-slate-50 text-slate-900 font-sans">
+        <div className="flex h-full w-full overflow-hidden bg-slate-50 text-slate-900 font-sans">
           {/* Persistent Left Sidebar */}
           <Sidebar />
 
           {/* Main Workspace Column */}
-          <div className="flex-1 flex flex-col h-screen overflow-hidden">
+          <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
             {/* Top Bar with Project / Revision Selectors and Global Actions */}
             <TopBar />
 
             {/* Scrollable Main Content Container */}
-            <main className="flex-1 overflow-y-auto p-6 md:p-8">
+            <main className="flex-1 overflow-y-auto p-6 md:p-8 bg-slate-50">
               <Routes>
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/projects" element={<ProjectsPage />} />
