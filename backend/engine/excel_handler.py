@@ -304,6 +304,12 @@ class ExcelHandler:
                     op_area = str(row[c]).strip()
                     break
 
+            status_val = ""
+            for c in ["Status", "Tag Status", "Signal Status"]:
+                if c in row and pd.notna(row[c]):
+                    status_val = str(row[c]).strip()
+                    break
+
             signals.append(SignalRecord(
                 id=idx + 1,
                 tag=tag_val,
@@ -320,6 +326,7 @@ class ExcelHandler:
                 loop_name=loop_nm,
                 technical_room=tech_room,
                 operating_area=op_area,
+                tag_status=status_val if status_val else None,
                 is_valid=is_valid,
                 validation_errors=errors if errors else None
             ))
@@ -375,12 +382,9 @@ class ExcelHandler:
         filename = f"{project_name.replace(' ', '_')}_{revision_code}_Completed_Allocation.xlsx"
         file_path = os.path.join(REPORT_OUTPUT_DIR, filename)
 
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Allocated IO Signals"
-
-        # Complete 76-column production DeltaV industrial schedule schema
-        headers = [
+        template_path = os.path.join(os.path.dirname(__file__), "..", "sample_files", "official", "Output_Allocation_Template.xlsx")
+        
+        headers_76 = [
             "Sr. No.", "Revision No", "Tag Name", "Technical Room", "Operating Area",
             "Risk Area", "Unit", "Segregation", "DSTName", "Service Description",
             "Location", "IO Type", "Signal Type", "Signal Level", "NON-IS / IS",
@@ -397,25 +401,23 @@ class ExcelHandler:
             "Elec Cable Size", "Elec Cable Pair", "Tag Status", "Remarks", "BATCH",
             "HW Loop Typical", "System 2", "Old Tag", "Instrument type", "FTA_Cable Name",
             "FTA_Cable Ferrule Name", "Cabinet Side (F/R)", "Change Type",
-            "Cabinet Name for Visualization", "Splitter/Relay/External PWR TB(+)",
-            "Splitter/Relay/External PWR TB(-)", "Loop Name", "Section / Sub Unit"
+            "Cabinet Name for Visualization", "Splitter/Relay/\nExternal PWR\nTB(+)",
+            "Splitter/Relay/\nExternal PWR\nTB(-)", "Loop Name", "Section / Sub Unit"
         ]
 
-        cls._apply_header_style(ws, len(headers), f"Hardware Allocation Schedule — {revision_code}")
-
-        for col_idx, h in enumerate(headers, 1):
-            ws.cell(row=2, column=col_idx, value=h)
-
-        thin_border = Border(
-            left=Side(style='thin', color='E2E8F0'),
-            right=Side(style='thin', color='E2E8F0'),
-            top=Side(style='thin', color='E2E8F0'),
-            bottom=Side(style='thin', color='E2E8F0')
-        )
-
-        valid_fill = PatternFill(start_color="E6F4EA", end_color="E6F4EA", fill_type="solid")
-        review_fill = PatternFill(start_color="FEF7E0", end_color="FEF7E0", fill_type="solid")
-        blocked_fill = PatternFill(start_color="FCE8E6", end_color="FCE8E6", fill_type="solid")
+        if os.path.exists(template_path):
+            wb = openpyxl.load_workbook(template_path)
+            ws = wb["IO Assignment"] if "IO Assignment" in wb.sheetnames else wb.active
+            # Remove any pre-existing data rows in template beyond row 1
+            if ws.max_row > 1:
+                ws.delete_rows(2, ws.max_row)
+        else:
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "IO Assignment"
+            for col_idx, h in enumerate(headers_76, 1):
+                cell = ws.cell(row=1, column=col_idx, value=h)
+                cell.font = Font(name="Calibri", bold=True)
 
         sig_map: Dict[str, SignalRecord] = {}
         if signals:
@@ -423,116 +425,103 @@ class ExcelHandler:
                 if s.tag:
                     sig_map[s.tag.strip().upper()] = s
 
-        for row_idx, a in enumerate(assignments, 3):
+        hw_assignments = [a for a in assignments if a.status != "Deleted" and getattr(a, "tag_status", "") != "Deleted"]
+        for row_idx, a in enumerate(hw_assignments, 2):
             s = sig_map.get(a.tag.strip().upper()) if a.tag else None
-            status_fill = valid_fill if a.status == "Allocated" else (review_fill if a.status == "Needs Review" else blocked_fill)
 
-            pins = [p.strip() for p in (a.charm_tb_terminals or "1, 2").split(",") if p.strip()]
-            tb1 = pins[0] if len(pins) > 0 else "1"
-            tb2 = pins[1] if len(pins) > 1 else "2"
-            tb3 = pins[2] if len(pins) > 2 else "-"
-
-            is_relay = "relay" in str(a.terminal_block).lower()
-            is_sov = "sov" in str(a.terminal_block).lower() or "isolated" in str(a.charm_type).lower()
-
-            cbl_str = a.cable_id or (s.cable_id if s else "")
-            cbl_sz = "24 Pair" if "24" in str(cbl_str) else ("12 Pair" if "12" in str(cbl_str) else "2 Pair")
-
-            inst = getattr(s, "instrument_type", "") if s else ""
-            if not inst and "-" in a.tag:
-                parts = a.tag.split("-")
-                inst = parts[1] if len(parts) > 1 else ""
+            # Map all 76 industrial attributes with strict DeltaV fidelity
+            sr_no = getattr(a, "sr_no", None) or (row_idx - 1)
+            rev_no = getattr(a, "revision_no", None) or revision_code
+            tag_nm = a.tag or "-"
+            tech_rm = getattr(a, "technical_room", None) or (s.technical_room if s else "-") or "-"
+            op_area = getattr(a, "operating_area", None) or (s.operating_area if s else "-") or "-"
+            risk_area = getattr(a, "risk_area", None) or (getattr(s, "risk_area", "-") if s else "-") or "-"
+            unit_val = getattr(a, "unit", None) or "-"
+            seg_val = getattr(a, "segregation", None) or (s.segregation if s and hasattr(s, "segregation") else "-") or "-"
+            dst_val = getattr(a, "dst_name", None) or "-"
+            svc_desc = getattr(a, "service_description", None) or a.description or (s.description if s else "-") or "-"
+            loc_val = getattr(a, "location", None) or tech_rm
+            io_type = "CHARMs IO" if tag_nm != "-" and a.status == "Allocated" else "-"
+            sig_type = a.signal_type or "-"
+            sig_level = getattr(a, "signal_level", None) or (s.signal_level if s else "-") or "-"
+            non_is = getattr(a, "non_is_is", None) or ("NON-IS" if tag_nm != "-" else "-")
+            eq_name = getattr(a, "equipment_name", None) or a.electronic_marshalling_cabinet or "-"
+            ext_pwr = getattr(a, "external_power", None) or (s.external_power if s else "-") or "-"
+            sys_cab = getattr(a, "system_cabinet", None) or a.cabinet_id or "-"
+            ctrl_val = getattr(a, "controller", None) or "-"
+            marsh_cab = getattr(a, "electronic_marshalling_cabinet", None) or "-"
+            cioc_val = getattr(a, "cioc_id", None) or "-"
+            bp_val = getattr(a, "baseplate_id", None) or "-"
+            ch_num = getattr(a, "channel_no", None) or a.charm_index or "-"
+            charm_num = getattr(a, "charm_no", None) or ch_num
+            charm_type_part = getattr(a, "charm_part_no", None) or a.charm_type or "-"
+            charm_desc = getattr(a, "charm_description", None) or "-"
+            charm_tb_part = getattr(a, "charm_tb_part_no", None) or "-"
+            charm_tb_desc = getattr(a, "charm_tb_description", None) or a.terminal_block or "-"
+            tb1 = getattr(a, "charm_tb1", None) or "-"
+            tb2 = getattr(a, "charm_tb2", None) or "-"
+            tb3 = getattr(a, "charm_tb3", None) or "-"
+            bp_adapt = getattr(a, "charm_baseplate_adapter", None) or "-"
+            m_fta = getattr(a, "m_fta", None) or "-"
+            m_fta_p = getattr(a, "m_fta_part_no", None) or "-"
+            m_fta_tb = getattr(a, "m_fta_tb", None) or "-"
+            m_fta_tb1 = getattr(a, "m_fta_tb1", None) or "-"
+            m_fta_tb2 = getattr(a, "m_fta_tb2", None) or "-"
+            m_fta_tb3 = getattr(a, "m_fta_tb3", None) or "-"
+            m_tb = getattr(a, "m_tb", None) or "-"
+            m_tb1 = getattr(a, "m_tb1", None) or "-"
+            m_tb2 = getattr(a, "m_tb2", None) or "-"
+            m_tb3 = getattr(a, "m_tb3", None) or "-"
+            irc_cab = getattr(a, "irc_aux_cabinet", None) or "-"
+            irc_tb = getattr(a, "irc_tb", None) or "-"
+            irc_tb1 = getattr(a, "irc_tb1", None) or "-"
+            irc_tb2 = getattr(a, "irc_tb2", None) or "-"
+            rel_spl = getattr(a, "relay_splitter", None) or "-"
+            rel_a1 = getattr(a, "relay_coil_a1", None) or "-"
+            rel_a2 = getattr(a, "relay_coil_a2", None) or "-"
+            rel_pos = getattr(a, "relay_contact_pos", None) or "-"
+            rel_neg = getattr(a, "relay_contact_neg", None) or "-"
+            fcbl_no = getattr(a, "field_cable_no", None) or a.cable_id or (s.cable_id if s else "-") or "-"
+            fcbl_sz = getattr(a, "field_cable_size", None) or (getattr(s, "field_cable_size", "-") if s else "-") or "-"
+            fcbl_pr = getattr(a, "field_cable_pair", None) or (f"Pair {a.pair_number}" if a.pair_number else "-")
+            irc_ftb = getattr(a, "irc_ftb", None) or "-"
+            irc_ftb1 = getattr(a, "irc_ftb1", None) or "-"
+            irc_ftb2 = getattr(a, "irc_ftb2", None) or "-"
+            ecbl_no = getattr(a, "elec_cable_no", None) or "-"
+            ecbl_sz = getattr(a, "elec_cable_size", None) or "-"
+            ecbl_pr = getattr(a, "elec_cable_pair", None) or "-"
+            tag_st = getattr(a, "tag_status", None) or ("Field" if a.status == "Allocated" else a.status)
+            remarks = getattr(a, "remarks", None) or a.reason or "-"
+            batch_val = getattr(a, "batch", None) or "-"
+            hw_loop = getattr(a, "hw_loop_typical", None) or (getattr(s, "hw_loop_typical", "-") if s else "-") or "-"
+            sys2 = getattr(a, "system_2", None) or "-"
+            old_tag = getattr(a, "old_tag", None) or "-"
+            inst_type = getattr(a, "instrument_type", None) or (getattr(s, "instrument_type", "-") if s else "-") or "-"
+            fta_cbl = getattr(a, "fta_cable_name", None) or "-"
+            fta_fer = getattr(a, "fta_cable_ferrule_name", None) or "-"
+            cab_side = getattr(a, "cabinet_side", None) or "-"
+            chg_type = getattr(a, "change_type", None) or "-"
+            cab_viz = getattr(a, "cabinet_name_viz", None) or (f"{marsh_cab}({cab_side})" if marsh_cab != "-" else "-")
+            pwr_pos = getattr(a, "splitter_relay_pwr_tb_pos", None) or "-"
+            pwr_neg = getattr(a, "splitter_relay_pwr_tb_neg", None) or "-"
+            loop_nm = getattr(a, "loop_name", None) or (getattr(s, "loop_name", "-") if s else "-") or "-"
+            sec_unit = getattr(a, "section_sub_unit", None) or "-"
 
             row_vals = [
-                row_idx - 2,                                            # 1. Sr. No.
-                revision_code,                                          # 2. Revision No
-                a.tag,                                                  # 3. Tag Name
-                getattr(s, "technical_room", "") or "PIB-30",           # 4. Technical Room
-                getattr(s, "operating_area", "") or "Area 320",         # 5. Operating Area
-                "Zone 2",                                               # 6. Risk Area
-                a.logical_group or "Unit 320",                          # 7. Unit
-                a.redundancy or "Train A",                              # 8. Segregation
-                "DeltaV-CHARMs",                                        # 9. DSTName
-                a.description or (s.description if s else ""),          # 10. Service Description
-                getattr(s, "technical_room", "") or "PIB-30",           # 11. Location
-                "CHARMs IO",                                            # 12. IO Type
-                a.signal_type,                                          # 13. Signal Type
-                getattr(s, "signal_level", "") or ("4-20mA" if a.signal_type in ["AI", "AIR", "AO", "AOR"] else "24VDC"), # 14. Signal Level
-                "NON-IS",                                               # 15. NON-IS / IS
-                inst,                                                   # 16. Equipment Name
-                getattr(s, "external_power", "") or ("230VAC" if "4wire" in str(getattr(s, "signal_level", "")).lower() else "Loop Powered"), # 17. External Power
-                a.system_cabinet or f"{a.cabinet_id or 'CAB-01'}-SYS",  # 18. System Cabinet
-                a.controller or f"CTL-{a.logical_group or '01'}",      # 19. Controller
-                a.cabinet_id or "CAB-01",                               # 20. Electronic/ Marshalling Cabinet
-                a.cioc_id or "CIOC-01",                                 # 21. CIOC/CSLS Name
-                a.baseplate_id or "001-CBP-1",                          # 22. Baseplate
-                a.charm_index or 1,                                     # 23. Channel_No
-                a.charm_no or (a.charm_index or 1),                     # 24. CHARM_No
-                a.charm_part_no or "SE4303T01",                         # 25. CHARM Type
-                a.charm_type or "AI 4-20 MA HART CHARM",                # 26. Charm Description
-                a.charm_tb_part_no or "SE4501",                         # 27. CHARM TB Part No
-                a.terminal_block or "Standard CHARM Terminal Block",    # 28. CHARM TB Description
-                tb1,                                                    # 29. CHARM TB1
-                tb2,                                                    # 30. CHARM TB2
-                tb3,                                                    # 31. CHARM TB3
-                "SE4006P0",                                             # 32. CHARM Baseplate Adapter
-                "FTA-CHARM-01",                                         # 33. M_FTA
-                "SE4006",                                               # 34. M_FTA Part No
-                "TB-01",                                                # 35. M_FTA_TB
-                "1",                                                    # 36. M_FTA_TB1
-                "2",                                                    # 37. M_FTA_TB2
-                "-",                                                    # 38. M_FTA_TB3
-                "TB-MARSH",                                             # 39. M_TB
-                "1",                                                    # 40. M_TB1
-                "2",                                                    # 41. M_TB2
-                "-",                                                    # 42. M_TB3
-                f"{a.cabinet_id or 'CAB-01'}-AUX",                      # 43. IRC / AUX Cabinet
-                "IRC-TB01",                                             # 44. IRC_TB
-                "1",                                                    # 45. IRC_TB1
-                "2",                                                    # 46. IRC_TB2
-                "Relay Interface" if is_relay else ("SOV Injected Power" if is_sov else "-"), # 47. Relay / Splitter
-                "A1" if is_relay else "-",                             # 48. Relay Coil A1 / Splitter In+
-                "A2" if is_relay else "-",                             # 49. Relay Coil A2 / Splitter In-
-                "11" if is_relay else "-",                             # 50. Relay Contact (+)
-                "14" if is_relay else "-",                             # 51. Relay Contact (-)
-                cbl_str,                                                # 52. Field Cable No
-                cbl_sz,                                                 # 53. Field Cable Size
-                a.pair_number or (s.pair_number if s else ""),          # 54. Field Cable Pair
-                "FTB-01",                                               # 55. IRC_FTB
-                "1",                                                    # 56. IRC_FTB1
-                "2",                                                    # 57. IRC_FTB2
-                f"ELEC-{cbl_str}" if cbl_str else "",                  # 58. Elec Cable No
-                "1.5 mm²",                                              # 59. Elec Cable Size
-                a.pair_number or (s.pair_number if s else ""),          # 60. Elec Cable Pair
-                a.tag_status or "Field",                                # 61. Tag Status
-                a.reason or ("Allocated via CP-SAT" if a.status == "Allocated" else a.status), # 62. Remarks
-                "Continuous",                                           # 63. BATCH
-                f"TYP-{a.signal_type}",                                 # 64. HW Loop Typical
-                "",                                                     # 65. System 2
-                "",                                                     # 66. Old Tag
-                inst,                                                   # 67. Instrument type
-                f"CBL-FTA-{a.cioc_id or '01'}",                         # 68. FTA_Cable Name
-                f"F-{a.tag}",                                           # 69. FTA_Cable Ferrule Name
-                "Front" if (a.charm_index or 1) <= 6 else "Rear",       # 70. Cabinet Side (F/R)
-                "Allocated" if a.status == "Allocated" else a.status,   # 71. Change Type
-                a.cabinet_id or "CAB-01",                               # 72. Cabinet Name for Visualization
-                "+24VDC" if is_sov else "-",                           # 73. Splitter/Relay/External PWR TB(+)
-                "GND" if is_sov else "-",                              # 74. Splitter/Relay/External PWR TB(-)
-                getattr(s, "loop_name", "") or (a.tag.rsplit("-", 1)[0] if "-" in a.tag else a.tag), # 75. Loop Name
-                a.logical_group or "Area 320"                           # 76. Section / Sub Unit
+                sr_no, rev_no, tag_nm, tech_rm, op_area, risk_area, unit_val, seg_val, dst_val, svc_desc,
+                loc_val, io_type, sig_type, sig_level, non_is, eq_name, ext_pwr, sys_cab, ctrl_val, marsh_cab,
+                cioc_val, bp_val, ch_num, charm_num, charm_type_part, charm_desc, charm_tb_part, charm_tb_desc,
+                tb1, tb2, tb3, bp_adapt, m_fta, m_fta_p, m_fta_tb, m_fta_tb1, m_fta_tb2, m_fta_tb3,
+                m_tb, m_tb1, m_tb2, m_tb3, irc_cab, irc_tb, irc_tb1, irc_tb2, rel_spl, rel_a1, rel_a2,
+                rel_pos, rel_neg, fcbl_no, fcbl_sz, fcbl_pr, irc_ftb, irc_ftb1, irc_ftb2, ecbl_no, ecbl_sz,
+                ecbl_pr, tag_st, remarks, batch_val, hw_loop, sys2, old_tag, inst_type, fta_cbl, fta_fer,
+                cab_side, chg_type, cab_viz, pwr_pos, pwr_neg, loop_nm, sec_unit
             ]
 
             for col_idx, val in enumerate(row_vals, 1):
                 cell = ws.cell(row=row_idx, column=col_idx, value=val)
-                cell.border = thin_border
-                if col_idx == 71:  # Change Type / Status
-                    cell.fill = status_fill
-                    cell.font = Font(name="Calibri", bold=True)
-                    cell.alignment = Alignment(horizontal="center")
-                else:
-                    cell.font = Font(name="Calibri", size=9)
+                cell.font = Font(name="Calibri", size=9)
 
-        cls._auto_fit_columns(ws)
         wb.save(file_path)
         return file_path
 

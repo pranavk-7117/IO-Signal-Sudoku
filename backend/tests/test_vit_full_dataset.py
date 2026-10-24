@@ -28,11 +28,13 @@ def test_full_customer_io_mdb_dataset_100_percent_allocation():
     engine = AllocationEngine(config)
     assignments = engine.run_allocation(signals)
 
-    # Rule 3: Check 100% allocated
+    # Rule 3: Check 100% of active signals allocated (189 active + 1 decommissioned/deleted)
     allocated = [a for a in assignments if a.status == "Allocated"]
-    unallocated = [a for a in assignments if a.status != "Allocated"]
-    assert len(unallocated) == 0, f"Expected 0 unallocated signals, found: {[u.tag for u in unallocated]}"
-    assert len(allocated) == 190, f"Expected 190 allocated signals, got {len(allocated)}"
+    deleted = [a for a in assignments if a.status == "Deleted"]
+    failed = [a for a in assignments if a.status not in ["Allocated", "Deleted"]]
+    assert len(failed) == 0, f"Expected 0 failed signals, found: {[u.tag for u in failed]}"
+    assert len(allocated) == 189, f"Expected 189 allocated signals, got {len(allocated)}"
+    assert len(deleted) == 1, f"Expected 1 deleted signal, got {len(deleted)}"
 
     # 4. Independent Validation
     validator = ValidationEngine(config)

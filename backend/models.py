@@ -80,7 +80,7 @@ class RuleConfigModel(BaseModel):
     custom_rules: List[Dict[str, Any]] = Field(default_factory=list)
 
 class HardwareConfigModel(BaseModel):
-    cabinets_count: int = 2
+    cabinets_count: int = 3
     ciocs_per_cabinet: int = 4
     baseplates_per_cioc: int = 8
     charms_per_baseplate: int = 12
@@ -166,9 +166,25 @@ class AssignmentModel(BaseModel):
     pair_number: Optional[int] = None
     redundancy: str = ""
     logical_group: str = ""
+
+    # Industrial 76-column fields:
+    sr_no: Optional[int] = None
+    revision_no: Optional[str] = "00"
+    technical_room: Optional[str] = None
+    operating_area: Optional[str] = None
+    risk_area: Optional[str] = None
+    unit: Optional[str] = None
+    segregation: Optional[str] = None
+    dst_name: Optional[str] = None
+    service_description: Optional[str] = None
+    location: Optional[str] = None
+    signal_level: Optional[str] = None
+    non_is_is: Optional[str] = None
+    equipment_name: Optional[str] = None
+    external_power: Optional[str] = None
     system_cabinet: Optional[str] = None
     controller: Optional[str] = None
-    cabinet_id: Optional[str] = None
+    electronic_marshalling_cabinet: Optional[str] = None
     cioc_id: Optional[str] = None
     baseplate_id: Optional[str] = None
     channel_no: Optional[int] = None
@@ -176,11 +192,63 @@ class AssignmentModel(BaseModel):
     charm_no: Optional[int] = None      # 1..96 per CIOC
     charm_part_no: Optional[str] = None
     charm_type: Optional[str] = None
+    charm_description: Optional[str] = None
     charm_tb_part_no: Optional[str] = None
+    charm_tb_description: Optional[str] = None
     terminal_block: Optional[str] = None
     charm_tb_terminals: Optional[str] = None
-    tag_status: str = "Field"
-    status: str = "Pending"  # Allocated, Pending, Needs Review, Blocked, Spare
+    charm_tb1: Optional[str] = None
+    charm_tb2: Optional[str] = None
+    charm_tb3: Optional[str] = None
+    charm_baseplate_adapter: Optional[str] = None
+    m_fta: Optional[str] = None
+    m_fta_part_no: Optional[str] = None
+    m_fta_tb: Optional[str] = None
+    m_fta_tb1: Optional[str] = None
+    m_fta_tb2: Optional[str] = None
+    m_fta_tb3: Optional[str] = None
+    m_tb: Optional[str] = None
+    m_tb1: Optional[str] = None
+    m_tb2: Optional[str] = None
+    m_tb3: Optional[str] = None
+    irc_aux_cabinet: Optional[str] = None
+    irc_tb: Optional[str] = None
+    irc_tb1: Optional[str] = None
+    irc_tb2: Optional[str] = None
+    relay_splitter: Optional[str] = None
+    relay_coil_a1: Optional[str] = None
+    relay_coil_a2: Optional[str] = None
+    relay_contact_pos: Optional[str] = None
+    relay_contact_neg: Optional[str] = None
+    field_cable_no: Optional[str] = None
+    field_cable_size: Optional[str] = None
+    field_cable_pair: Optional[str] = None
+    irc_ftb: Optional[str] = None
+    irc_ftb1: Optional[str] = None
+    irc_ftb2: Optional[str] = None
+    elec_cable_no: Optional[str] = None
+    elec_cable_size: Optional[str] = None
+    elec_cable_pair: Optional[str] = None
+    tag_status: str = "Field"  # Field, Cabinet Alarm, Wired Spare, Spare Slot, Deleted
+    remarks: Optional[str] = None
+    batch: Optional[str] = None
+    hw_loop_typical: Optional[str] = None
+    system_2: Optional[str] = None
+    old_tag: Optional[str] = None
+    instrument_type: Optional[str] = None
+    fta_cable_name: Optional[str] = None
+    fta_cable_ferrule_name: Optional[str] = None
+    cabinet_side: Optional[str] = "F"
+    change_type: Optional[str] = "-"
+    cabinet_name_viz: Optional[str] = None
+    splitter_relay_pwr_tb_pos: Optional[str] = None
+    splitter_relay_pwr_tb_neg: Optional[str] = None
+    loop_name: Optional[str] = None
+    section_sub_unit: Optional[str] = None
+    custom_attributes: Dict[str, Any] = Field(default_factory=dict)
+
+    cabinet_id: Optional[str] = None
+    status: str = "Pending"  # Allocated, Pending, Needs Review, Blocked, Spare, Deleted
     reason: Optional[str] = None
     is_manual_override: bool = False
 

@@ -1,6 +1,7 @@
 import os
 import shutil
 from typing import List, Dict, Any, Optional
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -40,6 +41,8 @@ except Exception:
     UPLOAD_DIR = "/tmp/uploads"
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+init_db()
+
 app = FastAPI(
     title="IO Signal Sudoku — Industrial IO Signal Allocation Platform",
     description="Intelligent constraint-based industrial IO signal allocation and validation engine for DeltaV control systems.",
@@ -49,15 +52,10 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-@app.on_event("startup")
-def startup_event():
-    init_db()
-    # Clean zero-preload startup: wait for user uploads during testing
 
 @app.get("/api/health")
 def health_check():
@@ -75,6 +73,7 @@ def get_projects():
 
 @app.post("/api/projects", response_model=ProjectResponse)
 def create_project(data: ProjectCreate):
+    print(f"[ROUTE] Inside create_project for {data.project_id}", flush=True)
     try:
         return DBService.create_project(data)
     except Exception as e:

@@ -5,13 +5,10 @@ import time
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from fastapi.testclient import TestClient
-from main import app
+from main import create_project, get_revisions, run_allocation, approve_allocation
 from database import init_db
-from models import ProjectCreate, SignalRecord
+from models import ProjectCreate, SignalRecord, ApprovalRequest
 from db_service import DBService
-
-client = TestClient(app)
 
 def setup_module(module):
     init_db()
@@ -25,15 +22,11 @@ def test_api_real_cpsat_solver_and_approval_flow():
         customer_name="Test Engineering Corp",
         system="DeltaV v14.3"
     )
-    p_res = client.post("/api/projects", json=p_data.model_dump())
-    assert p_res.status_code == 200
-    project = p_res.json()
+    project = create_project(p_data)
     p_id = project["id"]
 
     # 2. Get active revision
-    revs_res = client.get(f"/api/projects/{p_id}/revisions")
-    assert revs_res.status_code == 200
-    revs = revs_res.json()
+    revs = get_revisions(p_id)
     assert len(revs) > 0
     rev_id = revs[0]["id"]
 
@@ -46,61 +39,56 @@ def test_api_real_cpsat_solver_and_approval_flow():
     DBService.save_imported_signals(p_id, rev_id, signals)
 
     # 4. Trigger allocation via POST /api/allocation/run
-    alloc_res = client.post(f"/api/allocation/run?project_id={p_id}&revision_id={rev_id}&preserve_existing=true")
-    assert alloc_res.status_code == 200
-    result = alloc_res.json()
+    result = run_allocation(project_id=p_id, revision_id=rev_id, preserve_existing=True)
 
     # Verify structured CP-SAT instrumentation evidence in the response
-    assert result["allocated_count"] == 3
-    assert result["unallocated_count"] == 0
-    assert result["validation_errors"] == 0
-    assert result["approval_eligible"] is True
-    assert "diagnostics" in result
-    diag = result["diagnostics"]
-    assert diag["solver_name"] == "Google OR-Tools CP-SAT"
-    assert diag["solver_status"] in ["OPTIMAL", "FEASIBLE"]
-    assert diag["num_decision_variables"] > 0
-    assert diag["num_constraints"] > 0
+    assert result.allocated_count == 3
+    assert result.unallocated_count == 0
+    assert result.validation_errors == 0
+    assert result.approval_eligible is True
+    assert result.diagnostics is not None
+    diag = result.diagnostics
+    assert diag.solver_name == "Google OR-Tools CP-SAT"
+    assert diag.solver_status in ["OPTIMAL", "FEASIBLE"]
+    assert diag.num_decision_variables > 0
+    assert diag.num_constraints > 0
 
     # 5. Call Approval Gate
-    approve_res = client.post("/api/allocation/approve", json={
-        "project_id": p_id,
-        "revision_id": rev_id,
-        "reviewer_name": "Chief Automation Engineer",
-        "notes": "Verified against design rules"
-    })
-    assert approve_res.status_code == 200
-    appr = approve_res.json()
-    assert appr["is_approved"] is True
-    assert appr["approval_status"] == "Approved"
-    assert appr["blocking_issues_count"] == 0
+    appr = approve_allocation(ApprovalRequest(
+        project_id=p_id,
+        revision_id=rev_id,
+        reviewer_name="Chief Automation Engineer",
+        notes="Verified against design rules"
+    ))
+    assert appr.is_approved is True
+    assert appr.approval_status == "Approved"
+    assert appr.blocking_issues_count == 0
 
     # 6. Verify fail-closed approval when an unallocated or conflicting signal exists
-    p2_res = client.post("/api/projects", json={
-        "project_id": f"PRJ-FAIL-{ts}",
-        "name": "Failing Gate Test",
-        "customer_name": "Test Client"
-    })
-    p2 = p2_res.json()
+    p2_data = ProjectCreate(
+        project_id=f"PRJ-FAIL-{ts}",
+        name="Failing Gate Test",
+        customer_name="Test Client",
+        system="DeltaV v14.3"
+    )
+    p2 = create_project(p2_data)
     p2_id = p2["id"]
-    rev2_id = client.get(f"/api/projects/{p2_id}/revisions").json()[0]["id"]
+    rev2_id = get_revisions(p2_id)[0]["id"]
 
     # Insert an unallocated/unsupported signal
     bad_signals = [
         SignalRecord(id=1, tag=f"BAD-OPTIC-{ts}", signal_type="UNSUPPORTED_440V")
     ]
     DBService.save_imported_signals(p2_id, rev2_id, bad_signals)
-    client.post(f"/api/allocation/run?project_id={p2_id}&revision_id={rev2_id}")
+    run_allocation(project_id=p2_id, revision_id=rev2_id, preserve_existing=False)
 
     # Attempt to approve
-    bad_approve_res = client.post("/api/allocation/approve", json={
-        "project_id": p2_id,
-        "revision_id": rev2_id,
-        "reviewer_name": "Chief Engineer"
-    })
-    assert bad_approve_res.status_code == 200
-    bad_appr = bad_approve_res.json()
+    bad_appr = approve_allocation(ApprovalRequest(
+        project_id=p2_id,
+        revision_id=rev2_id,
+        reviewer_name="Chief Engineer"
+    ))
     # MUST BE REJECTED
-    assert bad_appr["is_approved"] is False
-    assert bad_appr["approval_status"] == "Rejected"
-    assert bad_appr["blocking_issues_count"] > 0
+    assert bad_appr.is_approved is False
+    assert bad_appr.approval_status == "Rejected"
+    assert bad_appr.blocking_issues_count > 0

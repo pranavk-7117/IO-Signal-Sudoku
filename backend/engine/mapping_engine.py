@@ -111,8 +111,11 @@ class MappingEngine:
     @staticmethod
     def sanitize_filename(filename: str) -> str:
         """Removes directory traversal sequences, special chars, and null bytes (Fixes D15)."""
-        base = os.path.basename(filename)
+        normalized = filename.replace("\\", "/")
+        base = os.path.basename(normalized)
         cleaned = re.sub(r'[^a-zA-Z0-9_\.-]', '_', base)
+        while '..' in cleaned:
+            cleaned = cleaned.replace('..', '_')
         return cleaned[:100]
 
     @staticmethod

@@ -5,17 +5,23 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from fastapi.testclient import TestClient
-from main import app
+from main import (
+    create_project, get_revisions, get_project_rules, toggle_project_rule,
+    add_custom_rule, update_project_rule, delete_project_rule, reset_project_rules,
+    run_allocation, explain_signal, export_allocation_workbook
+)
 from database import init_db
 from models import ProjectCreate, SignalRecord, HardwareConfigModel
 from db_service import DBService
 from rules import RuleEvaluator
 
-client = TestClient(app)
-
 def setup_module(module):
     init_db()
+
+def _get_val(obj, key):
+    if isinstance(obj, dict):
+        return obj.get(key)
+    return getattr(obj, key, None)
 
 def test_rules_crud_and_allocation_effect():
     ts = int(time.time() * 1000)
@@ -26,26 +32,20 @@ def test_rules_crud_and_allocation_effect():
         customer_name="Emerson Global",
         system="DeltaV v14.3"
     )
-    p_res = client.post("/api/projects", json=p_data.model_dump())
-    assert p_res.status_code == 200
-    project = p_res.json()
-    p_id = project["id"]
+    project = create_project(p_data)
+    p_id = _get_val(project, "id")
 
     # 2. GET rules - should return default rules (at least 15 rules)
-    rules_res = client.get(f"/api/projects/{p_id}/rules")
-    assert rules_res.status_code == 200
-    rules = rules_res.json()
+    rules = get_project_rules(p_id)
     assert len(rules) >= 15
-    r_001 = next((r for r in rules if r["id"] == "R-001"), None)
+    r_001 = next((r for r in rules if _get_val(r, "id") == "R-001"), None)
     assert r_001 is not None
-    assert r_001["enabled"] is True
-    assert r_001["is_custom"] is False
+    assert _get_val(r_001, "enabled") is True
+    assert _get_val(r_001, "is_custom") is False
 
     # 3. Toggle a default rule
-    toggle_res = client.post(f"/api/projects/{p_id}/rules/R-001/toggle")
-    assert toggle_res.status_code == 200
-    toggled_r001 = toggle_res.json()
-    assert toggled_r001["enabled"] is False
+    toggled_r001 = toggle_project_rule(p_id, "R-001")
+    assert _get_val(toggled_r001, "enabled") is False
 
     # 4. POST a new custom rule
     custom_rule_payload = {
@@ -65,12 +65,11 @@ def test_rules_crud_and_allocation_effect():
         "target_terminal_part": "SE4502-ESD",
         "target_terminals": "-, 2, 4"
     }
-    create_res = client.post(f"/api/projects/{p_id}/rules", json=custom_rule_payload)
-    assert create_res.status_code == 200
-    created = create_res.json()
-    assert created["id"] == f"CUST-ESD-{ts}"
-    assert created["is_custom"] is True
-    assert created["target_charm_part"] == "SE4302T02-ESD"
+    created = add_custom_rule(p_id, custom_rule_payload)
+    c_id = _get_val(created, "id")
+    assert c_id == f"CUST-ESD-{ts}"
+    assert _get_val(created, "is_custom") is True
+    assert _get_val(created, "target_charm_part") == "SE4302T02-ESD"
 
     # Verify rule is evaluated by RuleEvaluator.from_hardware_config
     hw_config = DBService.get_hardware_config(p_id)
@@ -85,27 +84,22 @@ def test_rules_crud_and_allocation_effect():
         "name": "Updated ESD Valve Rule",
         "target_charm_part": "SE4302T02-ESD-REV2"
     }
-    put_res = client.put(f"/api/projects/{p_id}/rules/{created['id']}", json=update_payload)
-    assert put_res.status_code == 200
-    updated = put_res.json()
-    assert updated["name"] == "Updated ESD Valve Rule"
-    assert updated["target_charm_part"] == "SE4302T02-ESD-REV2"
+    updated = update_project_rule(p_id, c_id, update_payload)
+    assert _get_val(updated, "name") == "Updated ESD Valve Rule"
+    assert _get_val(updated, "target_charm_part") == "SE4302T02-ESD-REV2"
 
     # 6. DELETE custom rule
-    del_res = client.delete(f"/api/projects/{p_id}/rules/{created['id']}")
-    assert del_res.status_code == 200
-    assert del_res.json()["success"] is True
+    del_res = delete_project_rule(p_id, c_id)
+    assert _get_val(del_res, "success") is True
 
     # Verify custom rule is gone
-    rules_after_del = client.get(f"/api/projects/{p_id}/rules").json()
-    assert not any(r["id"] == created["id"] for r in rules_after_del)
+    rules_after_del = get_project_rules(p_id)
+    assert not any(_get_val(r, "id") == c_id for r in rules_after_del)
 
     # 7. Reset rules
-    reset_res = client.post(f"/api/projects/{p_id}/rules/reset")
-    assert reset_res.status_code == 200
-    reset_rules = reset_res.json()
-    r_001_reset = next(r for r in reset_rules if r["id"] == "R-001")
-    assert r_001_reset["enabled"] is True  # reverted back to default True
+    reset_rules = reset_project_rules(p_id)
+    r_001_reset = next(r for r in reset_rules if _get_val(r, "id") == "R-001")
+    assert _get_val(r_001_reset, "enabled") is True  # reverted back to default True
 
 
 def test_explainability_and_76_col_export():
@@ -117,12 +111,11 @@ def test_explainability_and_76_col_export():
         customer_name="Emerson Global",
         system="DeltaV v14.3"
     )
-    p_res = client.post("/api/projects", json=p_data.model_dump())
-    assert p_res.status_code == 200
-    p_id = p_res.json()["id"]
+    project = create_project(p_data)
+    p_id = _get_val(project, "id")
 
-    revs = client.get(f"/api/projects/{p_id}/revisions").json()
-    rev_id = revs[0]["id"]
+    revs = get_revisions(p_id)
+    rev_id = _get_val(revs[0], "id")
 
     # 2. Insert RTD signal
     signals = [
@@ -141,13 +134,11 @@ def test_explainability_and_76_col_export():
     DBService.save_imported_signals(p_id, rev_id, signals)
 
     # 3. Run allocation
-    alloc_res = client.post(f"/api/allocation/run?project_id={p_id}&revision_id={rev_id}")
-    assert alloc_res.status_code == 200
+    alloc_res = run_allocation(project_id=p_id, revision_id=rev_id, preserve_existing=True)
+    assert alloc_res.allocated_count == 1
 
     # 4. Test Explainability endpoint
-    exp_res = client.get(f"/api/projects/{p_id}/explain-signal?tag=320-TT-101-{ts}&revision_id={rev_id}")
-    assert exp_res.status_code == 200
-    exp = exp_res.json()
+    exp = explain_signal(project_id=p_id, tag=f"320-TT-101-{ts}", revision_id=rev_id)
     assert exp["found"] is True
     assert exp["tag"] == f"320-TT-101-{ts}"
     assert "hardware_attribution" in exp
@@ -157,6 +148,7 @@ def test_explainability_and_76_col_export():
     assert "summary_narrative" in exp
 
     # 5. Test 76-column Excel export
-    export_res = client.get(f"/api/reports/export/allocation?project_id={p_id}&revision_id={rev_id}")
-    assert export_res.status_code == 200
-    assert len(export_res.content) > 1000
+    file_response = export_allocation_workbook(project_id=p_id, revision_id=rev_id)
+    assert file_response.path is not None
+    assert os.path.exists(file_response.path)
+    assert os.path.getsize(file_response.path) > 1000

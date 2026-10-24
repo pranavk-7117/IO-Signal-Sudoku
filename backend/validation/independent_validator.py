@@ -18,6 +18,20 @@ import math
 import re
 from typing import List, Dict, Set, Tuple, Optional, Any
 
+def extract_bp_num(bp_id: Optional[str]) -> int:
+    if not bp_id:
+        return 1
+    s = str(bp_id).strip()
+    if '-CBP-' in s:
+        try:
+            return int(s.split('-CBP-')[-1])
+        except ValueError:
+            pass
+    m = re.search(r'(\d+)$', s)
+    if m:
+        return int(m.group(1))
+    return 1
+
 from models import (
     HardwareConfigModel, SignalRecord, AssignmentModel,
     ValidationIssueModel, ValidationSummaryModel
@@ -130,6 +144,8 @@ class IndependentValidator:
         # 1. Complete Coverage Check
         allocated_tags = {a.tag for a in assignments if a.status == "Allocated" and getattr(a, "tag_status", "Field") != "Spare Slot"}
         for s in signals:
+            if (s.tag_status or "").upper() == "DELETED":
+                continue
             if s.tag and s.tag not in allocated_tags:
                 matching_assign = next((a for a in assignments if a.tag == s.tag), None)
                 reason = matching_assign.reason if matching_assign else "Signal was not allocated"
@@ -184,50 +200,70 @@ class IndependentValidator:
                 issue_idx += 1
 
         # 3. Hardware Hierarchy Capacity
+        distinct_cabinets = {a.cabinet_id for a in assignments if a.status == "Allocated" and a.cabinet_id and a.cabinet_id != "-"}
+        if len(distinct_cabinets) > self.config.cabinets_count:
+            issues.append(ValidationIssueModel(
+                issue_id=f"VAL-CAP-{issue_idx:03d}",
+                severity="ERROR",
+                rule_name="Cabinet Count Limit",
+                affected_tags=[],
+                affected_hardware=f"{len(distinct_cabinets)} cabinets",
+                message=f"Total unique cabinets used ({len(distinct_cabinets)}) exceeds configured cabinet limit ({self.config.cabinets_count}).",
+                suggested_action="Increase cabinet capacity or re-pack signals.",
+                blocks_approval=True
+            ))
+            issue_idx += 1
+
+        cab_ciocs: Dict[str, Set[str]] = {}
         for a in assignments:
-            if a.status == "Allocated":
-                cab_num = int("".join(c for c in (a.cabinet_id or "") if c.isdigit()) or 1)
-                cioc_num = int("".join(c for c in (a.cioc_id or "") if c.isdigit()) or 1)
-                bp_num = int("".join(c for c in (a.baseplate_id or "") if c.isdigit()) or 1)
+            if a.status == "Allocated" and a.cabinet_id and a.cioc_id and a.cabinet_id != "-" and a.cioc_id != "-":
+                cab_ciocs.setdefault(a.cabinet_id, set()).add(a.cioc_id)
 
-                if cab_num > self.config.cabinets_count:
-                    issues.append(ValidationIssueModel(
-                        issue_id=f"VAL-CAP-{issue_idx:03d}",
-                        severity="ERROR",
-                        rule_name="Cabinet Count Limit",
-                        affected_tags=[a.tag],
-                        affected_hardware=a.cabinet_id,
-                        message=f"Signal '{a.tag}' placed in cabinet #{cab_num}, exceeding maximum configured count of {self.config.cabinets_count}.",
-                        suggested_action="Increase cabinet capacity or re-pack signals.",
-                        blocks_approval=True
-                    ))
-                    issue_idx += 1
+        for cab_id, ciocs in cab_ciocs.items():
+            if len(ciocs) > self.config.ciocs_per_cabinet:
+                issues.append(ValidationIssueModel(
+                    issue_id=f"VAL-CAP-{issue_idx:03d}",
+                    severity="ERROR",
+                    rule_name="CIOC Capacity Limit",
+                    affected_tags=[],
+                    affected_hardware=f"{cab_id}: {len(ciocs)} CIOCs",
+                    message=f"Cabinet '{cab_id}' uses {len(ciocs)} CIOCs, exceeding configured limit of {self.config.ciocs_per_cabinet} per cabinet.",
+                    suggested_action="Relocate CIOCs or adjust configuration.",
+                    blocks_approval=True
+                ))
+                issue_idx += 1
 
-                if cioc_num > self.config.ciocs_per_cabinet:
-                    issues.append(ValidationIssueModel(
-                        issue_id=f"VAL-CAP-{issue_idx:03d}",
-                        severity="ERROR",
-                        rule_name="CIOC Capacity Limit",
-                        affected_tags=[a.tag],
-                        affected_hardware=f"{a.cabinet_id}/{a.cioc_id}",
-                        message=f"Signal '{a.tag}' placed in CIOC #{cioc_num}, exceeding CIOC limit of {self.config.ciocs_per_cabinet} per cabinet.",
-                        suggested_action="Relocate to valid CIOC index.",
-                        blocks_approval=True
-                    ))
-                    issue_idx += 1
-
+        cioc_bps: Dict[str, Set[str]] = {}
+        for a in assignments:
+            if a.status == "Allocated" and a.cioc_id and a.baseplate_id and a.cioc_id != "-" and a.baseplate_id != "-":
+                cioc_bps.setdefault(a.cioc_id, set()).add(a.baseplate_id)
+                bp_num = extract_bp_num(a.baseplate_id)
                 if bp_num > self.config.baseplates_per_cioc:
                     issues.append(ValidationIssueModel(
                         issue_id=f"VAL-CAP-{issue_idx:03d}",
                         severity="ERROR",
                         rule_name="Baseplate Capacity Limit",
                         affected_tags=[a.tag],
-                        affected_hardware=f"{a.cabinet_id}/{a.cioc_id}/{a.baseplate_id}",
-                        message=f"Signal '{a.tag}' placed in Baseplate #{bp_num}, exceeding baseplate limit of {self.config.baseplates_per_cioc} per CIOC.",
+                        affected_hardware=f"{a.cioc_id}/{a.baseplate_id}",
+                        message=f"Signal '{a.tag}' placed on Baseplate #{bp_num}, exceeding baseplate limit of {self.config.baseplates_per_cioc} per CIOC.",
                         suggested_action="Relocate to valid baseplate index.",
                         blocks_approval=True
                     ))
                     issue_idx += 1
+
+        for cioc_id, bps in cioc_bps.items():
+            if len(bps) > self.config.baseplates_per_cioc:
+                issues.append(ValidationIssueModel(
+                    issue_id=f"VAL-CAP-{issue_idx:03d}",
+                    severity="ERROR",
+                    rule_name="Baseplate Capacity Limit",
+                    affected_tags=[],
+                    affected_hardware=f"{cioc_id}: {len(bps)} Baseplates",
+                    message=f"CIOC '{cioc_id}' uses {len(bps)} Baseplates, exceeding baseplate limit of {self.config.baseplates_per_cioc} per CIOC.",
+                    suggested_action="Relocate to valid baseplate index.",
+                    blocks_approval=True
+                ))
+                issue_idx += 1
 
         # 4. Redundancy Segregation (A/B) Across Separate CIOCs
         if self.rules.enforce_ab_redundancy_separation:
@@ -304,7 +340,7 @@ class IndependentValidator:
                         ))
                         issue_idx += 1
                     else:
-                        bp_nums = sorted([int("".join(c for c in bp if c.isdigit())) for bp in c_bps if bp])
+                        bp_nums = sorted([extract_bp_num(bp) for bp in c_bps if bp])
                         if len(bp_nums) == 2 and bp_nums[1] != bp_nums[0] + 1:
                             issues.append(ValidationIssueModel(
                                 issue_id=f"VAL-CBL-{issue_idx:03d}",
@@ -409,7 +445,9 @@ class IndependentValidator:
             reserved_slots = max(1, int(charms_bp * (spare_pct / 100.0)))
             spare_threshold = charms_bp - reserved_slots
             for a in assignments:
-                if a.status == "Allocated" and a.charm_index and a.charm_index > spare_threshold and getattr(a, "tag_status", "Field") != "Spare Slot":
+                # 12-pair or 24-pair cables legitimately use all 12 slots; do not falsely warn
+                c_sz = getattr(a, "cable_size", None) or 1
+                if c_sz < charms_bp and a.status == "Allocated" and a.charm_index and a.charm_index > spare_threshold and getattr(a, "tag_status", "Field") not in ["Spare Slot", "Wired Spare"]:
                     addr = f"{a.cabinet_id}/{a.cioc_id}/{a.baseplate_id}/CH{a.charm_index:02d}"
                     issues.append(ValidationIssueModel(
                         issue_id=f"VAL-SPR-{issue_idx:03d}",
@@ -435,8 +473,9 @@ class IndependentValidator:
         assignment_issues = self.validate_assignments(signals, assignments)
         all_issues = input_issues + assignment_issues
 
+        active_signals = [s for s in signals if (s.tag_status or "").upper() != "DELETED"]
         allocated = len([a for a in assignments if a.status == "Allocated" and getattr(a, "tag_status", "Field") != "Spare Slot"])
-        unallocated = len(signals) - allocated
+        unallocated = max(0, len(active_signals) - allocated)
 
         errors = len([i for i in all_issues if i.severity == "ERROR"])
         warnings = len([i for i in all_issues if i.severity == "WARNING"])
