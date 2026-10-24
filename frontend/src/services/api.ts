@@ -263,6 +263,16 @@ export const api = {
     return res.json();
   },
 
+  // Explainability: "Why is it here?"
+  explainSignal: async (projectId: number, tag: string, revisionId?: number): Promise<any> => {
+    const url = revisionId
+      ? `${API_BASE}/projects/${projectId}/explain-signal?tag=${encodeURIComponent(tag)}&revision_id=${revisionId}`
+      : `${API_BASE}/projects/${projectId}/explain-signal?tag=${encodeURIComponent(tag)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Failed to fetch signal explainability');
+    return res.json();
+  },
+
   approveAllocation: async (projectId: number, revisionId: number, reviewerName: string = 'Lead DCS Engineer', notes?: string) => {
     const res = await fetch(`${API_BASE}/allocation/approve`, {
       method: 'POST',

@@ -369,7 +369,8 @@ class ExcelHandler:
         cls,
         project_name: str,
         revision_code: str,
-        assignments: List[AssignmentModel]
+        assignments: List[AssignmentModel],
+        signals: Optional[List[SignalRecord]] = None
     ) -> str:
         filename = f"{project_name.replace(' ', '_')}_{revision_code}_Completed_Allocation.xlsx"
         file_path = os.path.join(REPORT_OUTPUT_DIR, filename)
@@ -378,13 +379,29 @@ class ExcelHandler:
         ws = wb.active
         ws.title = "Allocated IO Signals"
 
+        # Complete 76-column production DeltaV industrial schedule schema
         headers = [
-            "Tag Name", "Description", "Signal Type", "Cable ID", "Pair #",
-            "Redundancy", "Logical Group", "Cabinet", "CIOC", "Baseplate",
-            "CHARM Slot", "CHARM Hardware Type", "Terminal Block", "Allocation Status", "Notes"
+            "Sr. No.", "Revision No", "Tag Name", "Technical Room", "Operating Area",
+            "Risk Area", "Unit", "Segregation", "DSTName", "Service Description",
+            "Location", "IO Type", "Signal Type", "Signal Level", "NON-IS / IS",
+            "Equipment Name", "External Power", "System Cabinet", "Controller",
+            "Electronic/ Marshalling Cabinet", "CIOC/CSLS Name", "Baseplate",
+            "Channel_No", "CHARM_No", "CHARM Type", "Charm Description",
+            "CHARM TB Part No", "CHARM TB Description", "CHARM TB1", "CHARM TB2",
+            "CHARM TB3", "CHARM Baseplate Adapter", "M_FTA", "M_FTA Part No",
+            "M_FTA_TB", "M_FTA_TB1", "M_FTA_TB2", "M_FTA_TB3", "M_TB", "M_TB1",
+            "M_TB2", "M_TB3", "IRC / AUX Cabinet", "IRC_TB", "IRC_TB1", "IRC_TB2",
+            "Relay / Splitter", "Relay Coil A1 / Splitter In+", "Relay Coil A2 / Splitter In-",
+            "Relay Contact (+)", "Relay Contact (-)", "Field Cable No", "Field Cable Size",
+            "Field Cable Pair", "IRC_FTB", "IRC_FTB1", "IRC_FTB2", "Elec Cable No",
+            "Elec Cable Size", "Elec Cable Pair", "Tag Status", "Remarks", "BATCH",
+            "HW Loop Typical", "System 2", "Old Tag", "Instrument type", "FTA_Cable Name",
+            "FTA_Cable Ferrule Name", "Cabinet Side (F/R)", "Change Type",
+            "Cabinet Name for Visualization", "Splitter/Relay/External PWR TB(+)",
+            "Splitter/Relay/External PWR TB(-)", "Loop Name", "Section / Sub Unit"
         ]
 
-        cls._apply_header_style(ws, len(headers), f"Hardware Allocation — {revision_code}")
+        cls._apply_header_style(ws, len(headers), f"Hardware Allocation Schedule — {revision_code}")
 
         for col_idx, h in enumerate(headers, 1):
             ws.cell(row=2, column=col_idx, value=h)
@@ -400,23 +417,120 @@ class ExcelHandler:
         review_fill = PatternFill(start_color="FEF7E0", end_color="FEF7E0", fill_type="solid")
         blocked_fill = PatternFill(start_color="FCE8E6", end_color="FCE8E6", fill_type="solid")
 
+        sig_map: Dict[str, SignalRecord] = {}
+        if signals:
+            for s in signals:
+                if s.tag:
+                    sig_map[s.tag.strip().upper()] = s
+
         for row_idx, a in enumerate(assignments, 3):
+            s = sig_map.get(a.tag.strip().upper()) if a.tag else None
             status_fill = valid_fill if a.status == "Allocated" else (review_fill if a.status == "Needs Review" else blocked_fill)
+
+            pins = [p.strip() for p in (a.charm_tb_terminals or "1, 2").split(",") if p.strip()]
+            tb1 = pins[0] if len(pins) > 0 else "1"
+            tb2 = pins[1] if len(pins) > 1 else "2"
+            tb3 = pins[2] if len(pins) > 2 else "-"
+
+            is_relay = "relay" in str(a.terminal_block).lower()
+            is_sov = "sov" in str(a.terminal_block).lower() or "isolated" in str(a.charm_type).lower()
+
+            cbl_str = a.cable_id or (s.cable_id if s else "")
+            cbl_sz = "24 Pair" if "24" in str(cbl_str) else ("12 Pair" if "12" in str(cbl_str) else "2 Pair")
+
+            inst = getattr(s, "instrument_type", "") if s else ""
+            if not inst and "-" in a.tag:
+                parts = a.tag.split("-")
+                inst = parts[1] if len(parts) > 1 else ""
+
             row_vals = [
-                a.tag, a.description, a.signal_type, a.cable_id, a.pair_number or "",
-                a.redundancy or "", a.logical_group or "", a.cabinet_id or "—", a.cioc_id or "—",
-                a.baseplate_id or "—", a.charm_index or "—", a.charm_type or "—",
-                a.terminal_block or "—", a.status, a.reason or ""
+                row_idx - 2,                                            # 1. Sr. No.
+                revision_code,                                          # 2. Revision No
+                a.tag,                                                  # 3. Tag Name
+                getattr(s, "technical_room", "") or "PIB-30",           # 4. Technical Room
+                getattr(s, "operating_area", "") or "Area 320",         # 5. Operating Area
+                "Zone 2",                                               # 6. Risk Area
+                a.logical_group or "Unit 320",                          # 7. Unit
+                a.redundancy or "Train A",                              # 8. Segregation
+                "DeltaV-CHARMs",                                        # 9. DSTName
+                a.description or (s.description if s else ""),          # 10. Service Description
+                getattr(s, "technical_room", "") or "PIB-30",           # 11. Location
+                "CHARMs IO",                                            # 12. IO Type
+                a.signal_type,                                          # 13. Signal Type
+                getattr(s, "signal_level", "") or ("4-20mA" if a.signal_type in ["AI", "AIR", "AO", "AOR"] else "24VDC"), # 14. Signal Level
+                "NON-IS",                                               # 15. NON-IS / IS
+                inst,                                                   # 16. Equipment Name
+                getattr(s, "external_power", "") or ("230VAC" if "4wire" in str(getattr(s, "signal_level", "")).lower() else "Loop Powered"), # 17. External Power
+                a.system_cabinet or f"{a.cabinet_id or 'CAB-01'}-SYS",  # 18. System Cabinet
+                a.controller or f"CTL-{a.logical_group or '01'}",      # 19. Controller
+                a.cabinet_id or "CAB-01",                               # 20. Electronic/ Marshalling Cabinet
+                a.cioc_id or "CIOC-01",                                 # 21. CIOC/CSLS Name
+                a.baseplate_id or "001-CBP-1",                          # 22. Baseplate
+                a.charm_index or 1,                                     # 23. Channel_No
+                a.charm_no or (a.charm_index or 1),                     # 24. CHARM_No
+                a.charm_part_no or "SE4303T01",                         # 25. CHARM Type
+                a.charm_type or "AI 4-20 MA HART CHARM",                # 26. Charm Description
+                a.charm_tb_part_no or "SE4501",                         # 27. CHARM TB Part No
+                a.terminal_block or "Standard CHARM Terminal Block",    # 28. CHARM TB Description
+                tb1,                                                    # 29. CHARM TB1
+                tb2,                                                    # 30. CHARM TB2
+                tb3,                                                    # 31. CHARM TB3
+                "SE4006P0",                                             # 32. CHARM Baseplate Adapter
+                "FTA-CHARM-01",                                         # 33. M_FTA
+                "SE4006",                                               # 34. M_FTA Part No
+                "TB-01",                                                # 35. M_FTA_TB
+                "1",                                                    # 36. M_FTA_TB1
+                "2",                                                    # 37. M_FTA_TB2
+                "-",                                                    # 38. M_FTA_TB3
+                "TB-MARSH",                                             # 39. M_TB
+                "1",                                                    # 40. M_TB1
+                "2",                                                    # 41. M_TB2
+                "-",                                                    # 42. M_TB3
+                f"{a.cabinet_id or 'CAB-01'}-AUX",                      # 43. IRC / AUX Cabinet
+                "IRC-TB01",                                             # 44. IRC_TB
+                "1",                                                    # 45. IRC_TB1
+                "2",                                                    # 46. IRC_TB2
+                "Relay Interface" if is_relay else ("SOV Injected Power" if is_sov else "-"), # 47. Relay / Splitter
+                "A1" if is_relay else "-",                             # 48. Relay Coil A1 / Splitter In+
+                "A2" if is_relay else "-",                             # 49. Relay Coil A2 / Splitter In-
+                "11" if is_relay else "-",                             # 50. Relay Contact (+)
+                "14" if is_relay else "-",                             # 51. Relay Contact (-)
+                cbl_str,                                                # 52. Field Cable No
+                cbl_sz,                                                 # 53. Field Cable Size
+                a.pair_number or (s.pair_number if s else ""),          # 54. Field Cable Pair
+                "FTB-01",                                               # 55. IRC_FTB
+                "1",                                                    # 56. IRC_FTB1
+                "2",                                                    # 57. IRC_FTB2
+                f"ELEC-{cbl_str}" if cbl_str else "",                  # 58. Elec Cable No
+                "1.5 mm²",                                              # 59. Elec Cable Size
+                a.pair_number or (s.pair_number if s else ""),          # 60. Elec Cable Pair
+                a.tag_status or "Field",                                # 61. Tag Status
+                a.reason or ("Allocated via CP-SAT" if a.status == "Allocated" else a.status), # 62. Remarks
+                "Continuous",                                           # 63. BATCH
+                f"TYP-{a.signal_type}",                                 # 64. HW Loop Typical
+                "",                                                     # 65. System 2
+                "",                                                     # 66. Old Tag
+                inst,                                                   # 67. Instrument type
+                f"CBL-FTA-{a.cioc_id or '01'}",                         # 68. FTA_Cable Name
+                f"F-{a.tag}",                                           # 69. FTA_Cable Ferrule Name
+                "Front" if (a.charm_index or 1) <= 6 else "Rear",       # 70. Cabinet Side (F/R)
+                "Allocated" if a.status == "Allocated" else a.status,   # 71. Change Type
+                a.cabinet_id or "CAB-01",                               # 72. Cabinet Name for Visualization
+                "+24VDC" if is_sov else "-",                           # 73. Splitter/Relay/External PWR TB(+)
+                "GND" if is_sov else "-",                              # 74. Splitter/Relay/External PWR TB(-)
+                getattr(s, "loop_name", "") or (a.tag.rsplit("-", 1)[0] if "-" in a.tag else a.tag), # 75. Loop Name
+                a.logical_group or "Area 320"                           # 76. Section / Sub Unit
             ]
+
             for col_idx, val in enumerate(row_vals, 1):
                 cell = ws.cell(row=row_idx, column=col_idx, value=val)
                 cell.border = thin_border
-                if col_idx == 14: # Status column
+                if col_idx == 71:  # Change Type / Status
                     cell.fill = status_fill
                     cell.font = Font(name="Calibri", bold=True)
                     cell.alignment = Alignment(horizontal="center")
                 else:
-                    cell.font = Font(name="Calibri", size=10)
+                    cell.font = Font(name="Calibri", size=9)
 
         cls._auto_fit_columns(ws)
         wb.save(file_path)

@@ -12,8 +12,10 @@ import {
   ArrowUpDown,
   ExternalLink,
   Layers,
-  Info
+  Info,
+  HelpCircle
 } from 'lucide-react';
+import { ExplainabilityDrawer } from '../components/ExplainabilityDrawer';
 import { useProject } from '../context/ProjectContext';
 import { api } from '../services/api';
 import { Assignment } from '../types';
@@ -32,6 +34,7 @@ export const AllocationWorkspacePage: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState('');
   const [sortCol, setSortCol] = useState<string>('tag');
   const [sortAsc, setSortAsc] = useState<boolean>(true);
+  const [explainingTag, setExplainingTag] = useState<string | null>(null);
 
   // Manual Override State
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
@@ -329,7 +332,7 @@ export const AllocationWorkspacePage: React.FC = () => {
                       a.status === 'Blocked' ? 'bg-rose-50/30' : a.status === 'Needs Review' ? 'bg-amber-50/20' : ''
                     }`}
                   >
-                    <td className="py-2.5 px-3 font-mono font-bold text-slate-900">{a.tag}</td>
+                    <td onClick={() => setExplainingTag(a.tag)} className="py-2.5 px-3 font-mono font-bold text-blue-700 hover:underline cursor-pointer" title="Click to see: Why is it here?">{a.tag}</td>
                     <td className="py-2.5 px-3">
                       <span className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
                         {a.signal_type}
@@ -369,13 +372,23 @@ export const AllocationWorkspacePage: React.FC = () => {
                       <StatusBadge status={a.status} size="sm" />
                     </td>
                     <td className="py-2.5 px-3 text-right">
-                      <button
-                        onClick={() => openOverride(a)}
-                        className="px-2 py-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded border border-slate-200 text-[11px] font-semibold transition-colors"
-                        title="Manual Reassignment"
-                      >
-                        Reassign
-                      </button>
+                      <div className="flex items-center justify-end space-x-1.5">
+                        <button
+                          onClick={() => setExplainingTag(a.tag)}
+                          className="px-2 py-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded border border-blue-200 text-[11px] font-semibold transition-colors flex items-center space-x-1 cursor-pointer"
+                          title="Explain placement: Which rules & neighbors drove this assignment?"
+                        >
+                          <HelpCircle className="w-3.5 h-3.5" />
+                          <span>Why here?</span>
+                        </button>
+                        <button
+                          onClick={() => openOverride(a)}
+                          className="px-2 py-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded border border-slate-200 text-[11px] font-semibold transition-colors cursor-pointer"
+                          title="Manual Reassignment"
+                        >
+                          Reassign
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -384,6 +397,16 @@ export const AllocationWorkspacePage: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Explainability Drawer */}
+      {explainingTag && currentProject && currentRevision && (
+        <ExplainabilityDrawer
+          projectId={currentProject.id}
+          revisionId={currentRevision.id}
+          tag={explainingTag}
+          onClose={() => setExplainingTag(null)}
+        />
+      )}
 
       {/* Manual Override Dialog with Validation Guard */}
       {showOverrideModal && selectedAssignment && (

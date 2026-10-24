@@ -26,6 +26,7 @@ from engine.utilisation import UtilisationCalculator
 from engine.excel_handler import ExcelHandler, REPORT_OUTPUT_DIR
 from engine.mapping_engine import MappingEngine
 from engine.revision_comparator import RevisionComparator
+from engine.explainability import ExplainabilityEngine
 from demo_data import seed_demo_project, SAMPLE_DIR
 
 if os.environ.get("VERCEL"):
@@ -566,6 +567,43 @@ def compare_revisions(
         target_assignments
     )
 
+# --- Explainability Engine: "Why is it here?" ---
+@app.get("/api/projects/{project_id}/explain-signal")
+def explain_signal(
+    project_id: int,
+    tag: str = Query(...),
+    revision_id: Optional[int] = None
+):
+    if not revision_id:
+        revs = DBService.get_revisions(project_id)
+        active_rev = next((r for r in revs if r["is_active"]), revs[0] if revs else None)
+        if not active_rev:
+            raise HTTPException(status_code=404, detail="No active revision found")
+        revision_id = active_rev["id"]
+
+    signals = DBService.get_imported_signals(project_id, revision_id)
+    assignments = DBService.get_assignments(project_id, revision_id)
+    hw_config = DBService.get_hardware_config(project_id, revision_id)
+
+    revs = DBService.get_revisions(project_id)
+    curr_idx = next((i for i, r in enumerate(revs) if r["id"] == revision_id), None)
+    prev_assignments = None
+    if curr_idx is not None and curr_idx > 0:
+        prev_assignments = DBService.get_assignments(project_id, revs[curr_idx - 1]["id"])
+
+    tqs = DBService.get_tqs(project_id, revision_id)
+    issues = DBService.get_validation_results(project_id, revision_id)
+
+    return ExplainabilityEngine.explain_signal(
+        tag=tag,
+        signals=signals,
+        assignments=assignments,
+        hw_config=hw_config,
+        previous_assignments=prev_assignments,
+        tqs=tqs,
+        validation_issues=issues
+    )
+
 # --- Report Downloads & Excel Exports ---
 @app.get("/api/reports/export/allocation")
 def export_allocation_workbook(project_id: int = Query(...), revision_id: int = Query(...)):
@@ -573,8 +611,9 @@ def export_allocation_workbook(project_id: int = Query(...), revision_id: int = 
     revs = DBService.get_revisions(project_id)
     curr_rev = next((r for r in revs if r["id"] == revision_id), {"revision_code": "Rev_A"})
     assignments = DBService.get_assignments(project_id, revision_id)
+    signals = DBService.get_imported_signals(project_id, revision_id)
 
-    file_path = ExcelHandler.export_completed_allocation(proj["name"], curr_rev["revision_code"], assignments)
+    file_path = ExcelHandler.export_completed_allocation(proj["name"], curr_rev["revision_code"], assignments, signals)
     return FileResponse(file_path, filename=os.path.basename(file_path), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 @app.get("/api/reports/export/validation")

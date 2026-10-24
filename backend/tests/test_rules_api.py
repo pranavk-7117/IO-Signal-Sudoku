@@ -106,3 +106,57 @@ def test_rules_crud_and_allocation_effect():
     reset_rules = reset_res.json()
     r_001_reset = next(r for r in reset_rules if r["id"] == "R-001")
     assert r_001_reset["enabled"] is True  # reverted back to default True
+
+
+def test_explainability_and_76_col_export():
+    ts = int(time.time() * 1000)
+    # 1. Create project
+    p_data = ProjectCreate(
+        project_id=f"PRJ-EXP-{ts}",
+        name="Explainability Test Project",
+        customer_name="Emerson Global",
+        system="DeltaV v14.3"
+    )
+    p_res = client.post("/api/projects", json=p_data.model_dump())
+    assert p_res.status_code == 200
+    p_id = p_res.json()["id"]
+
+    revs = client.get(f"/api/projects/{p_id}/revisions").json()
+    rev_id = revs[0]["id"]
+
+    # 2. Insert RTD signal
+    signals = [
+        SignalRecord(
+            id=1,
+            tag=f"320-TT-101-{ts}",
+            signal_type="AIR",
+            electrical_spec="RTD 3-Wire",
+            description="Reactor feed temperature",
+            cable_id="320-CBL-01",
+            pair_number=1,
+            redundancy="A",
+            logical_group="Unit 320"
+        )
+    ]
+    DBService.save_imported_signals(p_id, rev_id, signals)
+
+    # 3. Run allocation
+    alloc_res = client.post(f"/api/allocation/run?project_id={p_id}&revision_id={rev_id}")
+    assert alloc_res.status_code == 200
+
+    # 4. Test Explainability endpoint
+    exp_res = client.get(f"/api/projects/{p_id}/explain-signal?tag=320-TT-101-{ts}&revision_id={rev_id}")
+    assert exp_res.status_code == 200
+    exp = exp_res.json()
+    assert exp["found"] is True
+    assert exp["tag"] == f"320-TT-101-{ts}"
+    assert "hardware_attribution" in exp
+    assert exp["hardware_attribution"]["rule_id"] in ["R-MAP-01", "R-MAP-DEFAULT"]
+    assert "redundancy_attribution" in exp
+    assert "contiguity_attribution" in exp
+    assert "summary_narrative" in exp
+
+    # 5. Test 76-column Excel export
+    export_res = client.get(f"/api/reports/export/allocation?project_id={p_id}&revision_id={rev_id}")
+    assert export_res.status_code == 200
+    assert len(export_res.content) > 1000

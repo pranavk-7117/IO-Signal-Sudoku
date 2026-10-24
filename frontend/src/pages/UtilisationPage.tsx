@@ -14,6 +14,7 @@ import { useProject } from '../context/ProjectContext';
 import { api } from '../services/api';
 import { UtilisationSummary, CabinetUtilisation, CIOCUtilisation, BaseplateUtilisation } from '../types';
 import { MetricCard } from '../components/ui/MetricCard';
+import { ExplainabilityDrawer } from '../components/ExplainabilityDrawer';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
@@ -25,6 +26,7 @@ export const UtilisationPage: React.FC = () => {
   const [selectedCabinet, setSelectedCabinet] = useState<string>('CAB-01');
   const [selectedCIOC, setSelectedCIOC] = useState<string>('CIOC-01');
   const [loading, setLoading] = useState<boolean>(false);
+  const [explainingTag, setExplainingTag] = useState<string | null>(null);
 
   useEffect(() => {
     if (currentProject && currentRevision) {
@@ -273,6 +275,7 @@ export const UtilisationPage: React.FC = () => {
                   return (
                     <div
                       key={slot.charm_index}
+                      onClick={() => slot.signal_tag && setExplainingTag(slot.signal_tag)}
                       title={
                         slot.is_allocated
                           ? `CH${slot.charm_index}: ${slot.signal_tag} (${slot.signal_type})\n${slot.charm_type || ''}\n${slot.terminal_block || ''}`
@@ -299,6 +302,15 @@ export const UtilisationPage: React.FC = () => {
           ))}
         </div>
       </div>
+      {/* Explainability Drawer */}
+      {explainingTag && currentProject && currentRevision && (
+        <ExplainabilityDrawer
+          projectId={currentProject.id}
+          revisionId={currentRevision.id}
+          tag={explainingTag}
+          onClose={() => setExplainingTag(null)}
+        />
+      )}
     </div>
   );
 };

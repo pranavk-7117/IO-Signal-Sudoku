@@ -2,7 +2,6 @@ import React from 'react';
 import {
   FolderKanban,
   GitBranch,
-  RotateCcw,
   AlertOctagon,
   User,
   Cpu
@@ -17,8 +16,7 @@ export const TopBar: React.FC = () => {
     revisions,
     currentRevision,
     setCurrentProjectById,
-    setCurrentRevisionById,
-    resetToDemo
+    setCurrentRevisionById
   } = useProject();
 
   const navigate = useNavigate();
@@ -77,7 +75,7 @@ export const TopBar: React.FC = () => {
         )}
       </div>
 
-      {/* Right: DCS Info, Demo Data, and User Profile */}
+      {/* Right: DCS Architecture Info & User Profile */}
       <div className="flex items-center space-x-3">
         {/* DCS Architecture Badge */}
         {currentProject?.system && (
@@ -86,16 +84,6 @@ export const TopBar: React.FC = () => {
             <span>{currentProject.system}</span>
           </div>
         )}
-
-        {/* Reset to Synthetic Demo Data */}
-        <button
-          onClick={resetToDemo}
-          title="Reset database to synthetic Demo DeltaV project"
-          className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors cursor-pointer"
-        >
-          <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
-          <span className="hidden sm:inline">Load Demo Data</span>
-        </button>
 
         {/* User Pill */}
         <div className="flex items-center space-x-2 pl-3 border-l border-slate-200">
