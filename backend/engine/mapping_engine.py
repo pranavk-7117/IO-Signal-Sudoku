@@ -14,7 +14,31 @@ import re
 import uuid
 import pandas as pd
 from typing import List, Dict, Any, Tuple, Optional
-from rapidfuzz import fuzz
+try:
+    from rapidfuzz import fuzz as _rapidfuzz_fuzz
+    _HAS_RAPIDFUZZ = True
+except ImportError:  # pragma: no cover – optional dependency
+    _rapidfuzz_fuzz = None
+    _HAS_RAPIDFUZZ = False
+
+class _FallbackFuzz:
+    """Minimal stand-in when rapidfuzz is not installed."""
+    @staticmethod
+    def token_set_ratio(a: str, b: str) -> float:
+        a_tokens = set(a.lower().split())
+        b_tokens = set(b.lower().split())
+        if not a_tokens or not b_tokens:
+            return 0.0
+        intersection = len(a_tokens & b_tokens)
+        return 100.0 * intersection / max(len(a_tokens), len(b_tokens))
+    @staticmethod
+    def partial_ratio(a: str, b: str) -> float:
+        a, b = a.lower(), b.lower()
+        if a in b or b in a:
+            return 90.0
+        return 0.0
+
+fuzz = _rapidfuzz_fuzz if _HAS_RAPIDFUZZ else _FallbackFuzz()
 
 STANDARD_CABLE_SIZES = [2, 6, 12, 24]
 
