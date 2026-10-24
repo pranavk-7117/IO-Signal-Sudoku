@@ -12,11 +12,51 @@ import {
   ChevronDown,
   RotateCcw,
   Zap,
-  ExternalLink
+  ExternalLink,
+  WifiOff
 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { api } from '../services/api';
 import { ChatMessage, RiskAssessmentResponse } from '../types';
+
+function getLocalDCSExpertResponse(userText: string, riskInfo: RiskAssessmentResponse | null): { content: string; actions?: any[] } {
+  const q = userText.toLowerCase();
+
+  if (q.includes('risk') || q.includes('rule') || q.includes('suggest') || q.includes('score')) {
+    if (riskInfo && riskInfo.overall_score > 20) {
+      const topFactors = riskInfo.factors.slice(0, 3).map((f) => `* **[${f.severity}] ${f.title}:** ${f.description}`).join('\n');
+      return {
+        content: `### 🛡️ DCS Risk Assessment & Optimization Recommendations\n\n**Current Project Risk:** **${riskInfo.risk_level}** (${riskInfo.overall_score}/100)\n\n${riskInfo.summary}\n\n**Top Risk Factors:**\n${topFactors}\n\n**Recommended Actions:**\n* Use the **Apply Rule** buttons below to immediately enforce compliant parameters.\n* Re-run the CP-SAT solver to regenerate zero-violation hardware schedules.`,
+        actions: riskInfo.suggestions
+      };
+    }
+    return {
+      content: `### 🛡️ DeltaV Allocation Rules & Risk Guide\n\n* **Train A / Train B Segregation:** Hard requirement. Redundant trains must be allocated to separate CIOC carriers (Train A even, Train B odd) to prevent common-cause plant trips.\n* **10% Wired Spares by IO Type:** Mandated by Emerson commissioning standards. Unused AI spares cannot satisfy DO requirements.\n* **Inductive DO Protection:** Solenoids, horns, and beacons require Isolated DO **SE4302T02** with Fused TB **SE4502** to suppress back-EMF spikes.\n* **Multi-Pair Cables:** 12-pair and 24-pair cables must occupy contiguous slots across adjacent baseplates.`
+    };
+  }
+
+  if (q.includes('solenoid') || q.includes('sov') || q.includes('horn') || q.includes('beacon') || q.includes('isolated')) {
+    return {
+      content: `### ⚡ Solenoid & Inductive Load Hardware Requirements\n\nPer Emerson DeltaV and project engineering standards:\n\n* **CHARM Module:** **SE4302T02** (DO 24 VDC Isolated) is required to suppress inductive kickback and isolate carrier logic from field disturbances.\n* **Terminal Block:** **SE4502** (Fused-Injected-Power Terminal Block) provides dedicated loop fuse protection and injected field power distribution.\n* **Standard DO Restriction:** **SE4302T01** (High-Side DO) is only permitted for low-current indicator lamps and non-inductive discrete outputs (<0.5A).`
+    };
+  }
+
+  if (q.includes('spare') || q.includes('wired')) {
+    return {
+      content: `### 📊 10% Wired Spare Philosophy (Emerson Standards)\n\n* **Per-Controller Independence:** Spare capacity is calculated as 10% independently for each IO type (AIR, AOR, DIR, DOR) per controller.\n* **Why IO Type Segregation Matters:** Ten spare analog inputs do not help when a commissioning modification requires an additional discrete solenoid output.\n* **Traceable Naming:** Installed wired spares receive traceable tags (e.g., \`3201DSP...\`) with installed functional CHARMs and terminal blocks.\n* **Future Spare Slots:** Uncommitted carrier positions are fitted with **SE6103** CHARM Protection Covers.`
+    };
+  }
+
+  if (q.includes('rev') || q.includes('stability') || q.includes('diff') || q.includes('freeze')) {
+    return {
+      content: `### 🔄 Rev A → Rev B Revision Stability (DeltaV Pinning)\n\n* **Zero Signal Movement for Unchanged Tags:** The CP-SAT solver strictly freezes all existing signal addresses from Rev A.\n* **Vacated Deleted Signals:** Decommissioned signals (e.g. \`Status = DELETED\`) are released to hardware spares without shuffling existing field tags.\n* **Nearby Placement for New Signals:** Newly added tags are placed in adjacent spare slots on the same carrier or technical room.\n* **Full Traceability:** The revision impact report highlights every moved, added, and decommissioned channel.`
+    };
+  }
+
+  return {
+    content: `### 🤖 DeltaV Automation Specialist (Instant Expert Mode)\n\nI am ready to assist with your I/O signal allocations:\n\n* **Hardware Hierarchy:** System Cabinets (\`P30-DCS-32001-01\`), Controllers (\`P30DPK320101\`), CIOCs (96 channels), and 12-slot Baseplates.\n* **Segregation Philosophy:** Enforcing physical separation between Train A, Train B, alarms, and control loops.\n* **Signal Explainability:** Click any CHARM slot in the **Hardware Utilisation** rack visualizer to inspect placement rationale.\n\n*Tip: Start the backend server (\`uvicorn main:app --reload\`) to enable live Groq cloud reasoning.*`
+  };
+}
 
 export const DCSChatbot: React.FC = () => {
   const { currentProject, currentRevision, refreshProjects } = useProject();
@@ -34,6 +74,7 @@ export const DCSChatbot: React.FC = () => {
   const [riskInfo, setRiskInfo] = useState<RiskAssessmentResponse | null>(null);
   const [applyingSuggestionId, setApplyingSuggestionId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [backendAvailable, setBackendAvailable] = useState<boolean>(true);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -82,13 +123,17 @@ export const DCSChatbot: React.FC = () => {
         context_page: window.location.pathname
       });
 
+      setBackendAvailable(true);
       setMessages((prev) => [...prev, res.message]);
     } catch (err: any) {
+      console.warn('Backend chat unreachable, engaging local DCS expert engine:', err);
+      setBackendAvailable(false);
+      const fallback = getLocalDCSExpertResponse(textToSend, riskInfo);
       setMessages((prev) => [
         ...prev,
         {
           role: 'assistant',
-          content: `⚠️ **AI Query Notice:** ${err.message || 'Service temporarily unreachable.'}\n\nPlease check project telemetry or retry.`
+          content: `${fallback.content}\n\n*(Note: Instant DCS Expert Mode active)*`
         }
       ]);
     } finally {
