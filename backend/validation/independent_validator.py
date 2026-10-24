@@ -29,7 +29,7 @@ class IndependentValidator:
         self.config = config or HardwareConfigModel()
         self.rules = self.config.rules
         self.compat_matrix = self.config.compatibility_matrix
-        self.evaluator = RuleEvaluator()
+        self.evaluator = RuleEvaluator.from_hardware_config(self.config)
 
     def validate_input_dataset(self, signals: List[SignalRecord]) -> List[ValidationIssueModel]:
         """Validates input signals for completeness, tag uniqueness, and data validity."""

@@ -48,6 +48,90 @@ class RuleEvaluator:
                     hw_data = json.load(f)
                     self.hardware_config = HardwareSystemConfig(**hw_data)
 
+    @classmethod
+    def from_hardware_config(cls, hw_config: Optional[Any] = None) -> "RuleEvaluator":
+        evaluator = cls()
+        if not hw_config:
+            return evaluator
+
+        # Gather custom rules from hardware config or nested rules
+        custom_rules_data = []
+        if hasattr(hw_config, "custom_rules") and hw_config.custom_rules:
+            custom_rules_data.extend(hw_config.custom_rules)
+        elif hasattr(hw_config, "rules") and hasattr(hw_config.rules, "custom_rules") and hw_config.rules.custom_rules:
+            custom_rules_data.extend(hw_config.rules.custom_rules)
+
+        # Check for rules_override (e.g. toggled enabled status for default rules)
+        overrides = {}
+        if hasattr(hw_config, "rules_override") and isinstance(hw_config.rules_override, dict):
+            overrides = hw_config.rules_override
+
+        # Apply overrides to existing default rules
+        for r in evaluator.rules:
+            if r.id in overrides:
+                ov = overrides[r.id]
+                if isinstance(ov, dict):
+                    if "enabled" in ov:
+                        r.enabled = bool(ov["enabled"])
+                    if "severity" in ov:
+                        r.severity = RuleSeverity.HARD if str(ov["severity"]).lower() == "hard" else RuleSeverity.SOFT
+                elif isinstance(ov, bool):
+                    r.enabled = ov
+
+        # Convert custom rules into RuleDefinitions and prepend them
+        parsed_custom = []
+        for cr in custom_rules_data:
+            try:
+                if isinstance(cr, RuleDefinition):
+                    parsed_custom.append(cr)
+                elif isinstance(cr, dict):
+                    rule_id = cr.get("id", f"CUST-{len(parsed_custom)+1:03d}")
+                    name = cr.get("name", "Custom Rule")
+                    enabled = cr.get("enabled", True)
+                    kind_str = cr.get("kind", "charm_terminal_map")
+                    severity_str = str(cr.get("severity", "hard")).lower()
+                    severity = RuleSeverity.HARD if severity_str == "hard" else RuleSeverity.SOFT
+                    params = cr.get("params") or {}
+                    
+                    if (not params or not params.get("hardware")) and (cr.get("target_charm") or cr.get("match_value")):
+                        cond = {
+                            "column": cr.get("target_column") or "signal_type",
+                            "operator": cr.get("operator") or "equals",
+                            "value": cr.get("match_value") or "",
+                        }
+                        if cr.get("operator") == "in":
+                            cond["values"] = [v.strip() for v in (cr.get("match_value") or "").split(",") if v.strip()]
+                        
+                        params = {
+                            "conditions": [cond],
+                            "match_mode": "any",
+                            "hardware": {
+                                "charm_type": cr.get("target_charm") or "AI 4-20 MA HART CHARM",
+                                "charm_part_no": cr.get("target_charm_part") or "SE4303T01",
+                                "terminal_block": cr.get("target_terminal") or "Standard CHARM Terminal Block",
+                                "charm_tb_part_no": cr.get("target_terminal_part") or "SE4501",
+                                "charm_tb_terminals": cr.get("target_terminals") or "1, 2"
+                            }
+                        }
+                    
+                    parsed_custom.append(RuleDefinition(
+                        id=rule_id,
+                        name=name,
+                        enabled=enabled,
+                        kind=RuleKind(kind_str) if kind_str in [k.value for k in RuleKind] else RuleKind.CHARM_TERMINAL_MAP,
+                        severity=severity,
+                        weight=int(cr.get("weight", 120)),
+                        scope=cr.get("scope", "signal"),
+                        params=params
+                    ))
+            except Exception:
+                continue
+
+        if parsed_custom:
+            evaluator.rules = parsed_custom + [r for r in evaluator.rules if r.id not in {c.id for c in parsed_custom}]
+
+        return evaluator
+
     def normalize_redundancy(self, raw_val: Optional[str]) -> Optional[str]:
         return RedundancyNormalizer.normalize(raw_val, self.hardware_config.redundancy_mappings)
 

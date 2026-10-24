@@ -1,16 +1,13 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   FolderKanban,
   GitBranch,
-  Play,
   RotateCcw,
-  Download,
   AlertOctagon,
   User,
-  CheckCircle2
+  Cpu
 } from 'lucide-react';
 import { useProject } from '../../context/ProjectContext';
-import { api } from '../../services/api';
 import { useNavigate } from 'react-router-dom';
 
 export const TopBar: React.FC = () => {
@@ -21,37 +18,10 @@ export const TopBar: React.FC = () => {
     currentRevision,
     setCurrentProjectById,
     setCurrentRevisionById,
-    resetToDemo,
-    refreshProjects,
-    refreshRevisions
+    resetToDemo
   } = useProject();
 
   const navigate = useNavigate();
-  const [runningAllocation, setRunningAllocation] = useState(false);
-  const [allocationSuccess, setAllocationSuccess] = useState(false);
-
-  const handleRunAllocation = async () => {
-    if (!currentProject || !currentRevision) return;
-    try {
-      setRunningAllocation(true);
-      await api.runAllocation(currentProject.id, currentRevision.id, true);
-      await refreshProjects();
-      await refreshRevisions();
-      setAllocationSuccess(true);
-      setTimeout(() => setAllocationSuccess(false), 3000);
-      navigate('/allocation');
-    } catch (err: any) {
-      alert(`Allocation Failed: ${err.message}`);
-    } finally {
-      setRunningAllocation(false);
-    }
-  };
-
-  const handleQuickExport = () => {
-    if (!currentProject || !currentRevision) return;
-    const url = api.getExportUrl('allocation', currentProject.id, currentRevision.id);
-    window.open(url, '_blank');
-  };
 
   return (
     <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between shadow-xs sticky top-0 z-30 select-none">
@@ -97,7 +67,7 @@ export const TopBar: React.FC = () => {
             {(currentProject.validation_errors_count > 0 || currentProject.open_tqs_count > 0) && (
               <button
                 onClick={() => navigate('/validation-tqs')}
-                className="flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-colors"
+                className="flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-colors cursor-pointer"
               >
                 <AlertOctagon className="w-3.5 h-3.5 text-rose-600" />
                 <span>{currentProject.validation_errors_count} Blocking Issues • {currentProject.open_tqs_count} TQs</span>
@@ -107,56 +77,24 @@ export const TopBar: React.FC = () => {
         )}
       </div>
 
-      {/* Right: Quick Actions */}
+      {/* Right: DCS Info, Demo Data, and User Profile */}
       <div className="flex items-center space-x-3">
+        {/* DCS Architecture Badge */}
+        {currentProject?.system && (
+          <div className="hidden md:flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-mono text-slate-600 bg-slate-50 border border-slate-200">
+            <Cpu className="w-3.5 h-3.5 text-blue-600" />
+            <span>{currentProject.system}</span>
+          </div>
+        )}
+
         {/* Reset to Synthetic Demo Data */}
         <button
           onClick={resetToDemo}
           title="Reset database to synthetic Demo DeltaV project"
-          className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors"
+          className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors cursor-pointer"
         >
           <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
           <span className="hidden sm:inline">Load Demo Data</span>
-        </button>
-
-        {/* Quick Export Allocation */}
-        <button
-          onClick={handleQuickExport}
-          title="Download completed allocation Excel"
-          className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors"
-        >
-          <Download className="w-3.5 h-3.5 text-slate-500" />
-          <span className="hidden sm:inline">Export Excel</span>
-        </button>
-
-        {/* Run Allocation Solver Button */}
-        <button
-          onClick={handleRunAllocation}
-          disabled={runningAllocation}
-          className={`flex items-center space-x-1.5 px-4 py-1.5 text-xs font-bold rounded-md text-white shadow-xs transition-all ${
-            runningAllocation
-              ? 'bg-blue-400 cursor-not-allowed'
-              : allocationSuccess
-              ? 'bg-emerald-600 hover:bg-emerald-700'
-              : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/20'
-          }`}
-        >
-          {runningAllocation ? (
-            <>
-              <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              <span>Solving Constraints...</span>
-            </>
-          ) : allocationSuccess ? (
-            <>
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Allocated!</span>
-            </>
-          ) : (
-            <>
-              <Play className="w-3.5 h-3.5 fill-current" />
-              <span>Run Allocation</span>
-            </>
-          )}
         </button>
 
         {/* User Pill */}

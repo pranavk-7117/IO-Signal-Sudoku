@@ -37,6 +37,27 @@ export interface RuleConfig {
   preserve_previous_assignments: boolean;
 }
 
+export interface ProjectRule {
+  id: string;
+  name: string;
+  description?: string;
+  enabled: boolean;
+  kind: string;
+  severity: 'hard' | 'soft';
+  weight?: number;
+  scope: string;
+  is_custom?: boolean;
+  target_column?: string;
+  operator?: string;
+  match_value?: string;
+  target_charm?: string;
+  target_charm_part?: string;
+  target_terminal?: string;
+  target_terminal_part?: string;
+  target_terminals?: string;
+  params?: Record<string, any>;
+}
+
 export interface HardwareConfig {
   cabinets_count: number;
   ciocs_per_cabinet: number;
@@ -44,6 +65,8 @@ export interface HardwareConfig {
   charms_per_baseplate: number;
   spare_percentage: number;
   rules: RuleConfig;
+  custom_rules?: ProjectRule[];
+  rules_override?: Record<string, any>;
   compatibility_matrix: Record<string, { charm: string; terminal: string }>;
 }
 

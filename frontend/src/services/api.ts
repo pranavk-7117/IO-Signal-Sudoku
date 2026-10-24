@@ -1,5 +1,5 @@
 import {
-  Project, Revision, HardwareConfig, Assignment,
+  Project, Revision, HardwareConfig, ProjectRule, Assignment,
   ValidationSummary, TechnicalQuery, UtilisationSummary,
   RevisionComparison, AuditLog
 } from '../types';
@@ -134,6 +134,84 @@ export const api = {
       body: JSON.stringify(config)
     });
     if (!res.ok) throw new Error('Failed to save hardware configuration');
+    return res.json();
+  },
+
+  // Project Rules Management (Default & Custom Rules CRUD)
+  getProjectRules: async (projectId: number, revisionId?: number): Promise<ProjectRule[]> => {
+    const url = revisionId
+      ? `${API_BASE}/projects/${projectId}/rules?revision_id=${revisionId}`
+      : `${API_BASE}/projects/${projectId}/rules`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Failed to fetch project rules');
+    return res.json();
+  },
+
+  createCustomRule: async (projectId: number, rule: Partial<ProjectRule>, revisionId?: number): Promise<ProjectRule> => {
+    const url = revisionId
+      ? `${API_BASE}/projects/${projectId}/rules?revision_id=${revisionId}`
+      : `${API_BASE}/projects/${projectId}/rules`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rule)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to create custom rule');
+    }
+    return res.json();
+  },
+
+  updateCustomRule: async (projectId: number, ruleId: string, rule: Partial<ProjectRule>, revisionId?: number): Promise<ProjectRule> => {
+    const url = revisionId
+      ? `${API_BASE}/projects/${projectId}/rules/${encodeURIComponent(ruleId)}?revision_id=${revisionId}`
+      : `${API_BASE}/projects/${projectId}/rules/${encodeURIComponent(ruleId)}`;
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rule)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to update rule');
+    }
+    return res.json();
+  },
+
+  deleteCustomRule: async (projectId: number, ruleId: string, revisionId?: number): Promise<boolean> => {
+    const url = revisionId
+      ? `${API_BASE}/projects/${projectId}/rules/${encodeURIComponent(ruleId)}?revision_id=${revisionId}`
+      : `${API_BASE}/projects/${projectId}/rules/${encodeURIComponent(ruleId)}`;
+    const res = await fetch(url, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to delete custom rule');
+    }
+    return true;
+  },
+
+  toggleProjectRule: async (projectId: number, ruleId: string, revisionId?: number): Promise<ProjectRule> => {
+    const url = revisionId
+      ? `${API_BASE}/projects/${projectId}/rules/${encodeURIComponent(ruleId)}/toggle?revision_id=${revisionId}`
+      : `${API_BASE}/projects/${projectId}/rules/${encodeURIComponent(ruleId)}/toggle`;
+    const res = await fetch(url, { method: 'POST' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to toggle rule');
+    }
+    return res.json();
+  },
+
+  resetProjectRules: async (projectId: number, revisionId?: number): Promise<ProjectRule[]> => {
+    const url = revisionId
+      ? `${API_BASE}/projects/${projectId}/rules/reset?revision_id=${revisionId}`
+      : `${API_BASE}/projects/${projectId}/rules/reset`;
+    const res = await fetch(url, { method: 'POST' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to reset rules');
+    }
     return res.json();
   },
 

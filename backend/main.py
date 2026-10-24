@@ -10,7 +10,7 @@ from datetime import datetime
 from database import get_db
 from models import (
     ProjectCreate, ProjectUpdate, ProjectResponse,
-    RevisionCreate, RevisionResponse, HardwareConfigModel,
+    RevisionCreate, RevisionResponse, HardwareConfigModel, ProjectRuleModel,
     SignalRecord, AssignmentModel, AssignmentUpdateModel,
     ValidationIssueModel, ValidationSummaryModel,
     TQCreateModel, TQUpdateModel, TQResponseModel,
@@ -228,6 +228,43 @@ def get_hardware_config(project_id: int, revision_id: Optional[int] = None):
 def save_hardware_config(project_id: int, config: HardwareConfigModel, revision_id: Optional[int] = None):
     success = DBService.save_hardware_config(project_id, revision_id, config)
     return {"message": "Hardware configuration and rules updated successfully", "success": success}
+
+# --- Project Rules Management (Add, Edit, Delete, Toggle, Reset) ---
+@app.get("/api/projects/{project_id}/rules", response_model=List[ProjectRuleModel])
+def get_project_rules(project_id: int, revision_id: Optional[int] = None):
+    rules = DBService.get_project_rules(project_id, revision_id)
+    return rules
+
+@app.post("/api/projects/{project_id}/rules", response_model=ProjectRuleModel)
+def add_custom_rule(project_id: int, rule: Dict[str, Any], revision_id: Optional[int] = None):
+    created = DBService.add_project_rule(project_id, rule, revision_id)
+    return created
+
+@app.put("/api/projects/{project_id}/rules/{rule_id}", response_model=ProjectRuleModel)
+def update_project_rule(project_id: int, rule_id: str, rule: Dict[str, Any], revision_id: Optional[int] = None):
+    updated = DBService.update_project_rule(project_id, rule_id, rule, revision_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Rule {rule_id} not found")
+    return updated
+
+@app.delete("/api/projects/{project_id}/rules/{rule_id}")
+def delete_project_rule(project_id: int, rule_id: str, revision_id: Optional[int] = None):
+    deleted = DBService.delete_project_rule(project_id, rule_id, revision_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Custom rule {rule_id} not found or cannot be deleted")
+    return {"message": f"Custom rule {rule_id} deleted successfully", "success": True}
+
+@app.post("/api/projects/{project_id}/rules/{rule_id}/toggle", response_model=ProjectRuleModel)
+def toggle_project_rule(project_id: int, rule_id: str, revision_id: Optional[int] = None):
+    toggled = DBService.toggle_project_rule(project_id, rule_id, revision_id)
+    if not toggled:
+        raise HTTPException(status_code=404, detail=f"Rule {rule_id} not found")
+    return toggled
+
+@app.post("/api/projects/{project_id}/rules/reset", response_model=List[ProjectRuleModel])
+def reset_project_rules(project_id: int, revision_id: Optional[int] = None):
+    rules = DBService.reset_project_rules(project_id, revision_id)
+    return rules
 
 # --- Allocation Engine Routes ---
 @app.post("/api/allocation/run", response_model=AllocationRunResult)

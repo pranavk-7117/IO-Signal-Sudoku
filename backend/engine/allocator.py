@@ -44,17 +44,17 @@ class AllocationEngine:
         self.compat_matrix = config.compatibility_matrix
         self.model_hook = model_hook
         self.last_diagnostics: Optional[SolverDiagnostics] = None
-        self.evaluator = RuleEvaluator()
+        self.evaluator = RuleEvaluator.from_hardware_config(config)
         self.naming = NamingEngine()
 
     @staticmethod
-    def select_hardware(signal: SignalRecord, compat_matrix: Dict[str, Any]) -> Tuple[str, str, str, str, str]:
+    def select_hardware(signal: SignalRecord, compat_matrix: Dict[str, Any], evaluator: Optional[RuleEvaluator] = None) -> Tuple[str, str, str, str, str]:
         """
         Determines (charm_type, charm_part_no, terminal_block, charm_tb_part_no, charm_tb_terminals)
         using RuleEvaluator with fallback to matrix.
         """
-        evaluator = RuleEvaluator()
-        hw = evaluator.resolve_hardware_for_signal(signal)
+        ev = evaluator or RuleEvaluator()
+        hw = ev.resolve_hardware_for_signal(signal)
         return (
             hw.get("charm_type", "AI 4-20 MA HART CHARM"),
             hw.get("charm_part_no", "SE4303T01"),
@@ -479,7 +479,7 @@ class AllocationEngine:
         charm_no = (bp - 1) * charms_per_bp + charm_idx
 
         if sig is not None:
-            c_name, c_part, t_name, t_part, t_term = self.select_hardware(sig, self.compat_matrix)
+            c_name, c_part, t_name, t_part, t_term = self.select_hardware(sig, self.compat_matrix, self.evaluator)
             return AssignmentModel(
                 signal_id=sig.id,
                 tag=sig.tag,

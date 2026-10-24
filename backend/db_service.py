@@ -1,3 +1,4 @@
+import os
 import json
 from datetime import datetime
 from typing import List, Dict, Any, Optional
@@ -257,6 +258,8 @@ class DBService:
 
         rules_dict = json.loads(row["rules_json"])
         compat_dict = json.loads(row["compatibility_matrix_json"])
+        custom_rules = rules_dict.pop("custom_rules", [])
+        rules_override = rules_dict.pop("rules_override", None)
         return HardwareConfigModel(
             cabinets_count=row["cabinets_count"],
             ciocs_per_cabinet=row["ciocs_per_cabinet"],
@@ -264,6 +267,8 @@ class DBService:
             charms_per_baseplate=row["charms_per_baseplate"],
             spare_percentage=row["spare_percentage"],
             rules=RuleConfigModel(**rules_dict),
+            custom_rules=custom_rules,
+            rules_override=rules_override,
             compatibility_matrix=compat_dict
         )
 
@@ -273,7 +278,10 @@ class DBService:
         cursor = conn.cursor()
         now = datetime.now().isoformat()
         
-        rules_json = config.rules.model_dump_json()
+        rules_dict = config.rules.model_dump()
+        rules_dict["custom_rules"] = config.custom_rules
+        rules_dict["rules_override"] = config.rules_override
+        rules_json = json.dumps(rules_dict)
         compat_json = json.dumps(config.compatibility_matrix)
 
         cursor.execute("""
@@ -289,6 +297,249 @@ class DBService:
         conn.commit()
         conn.close()
         return True
+
+    @staticmethod
+    def _load_raw_default_rules() -> List[Dict[str, Any]]:
+        possible_dirs = [
+            os.path.join(os.path.dirname(__file__), "..", "config"),
+            os.path.join(os.path.dirname(__file__), "config"),
+            os.path.join(os.getcwd(), "config")
+        ]
+        for d in possible_dirs:
+            p = os.path.join(d, "default_rules.json")
+            if os.path.exists(p):
+                with open(p, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        return []
+
+    @staticmethod
+    def _format_rule_for_response(r: Dict[str, Any], is_custom: bool = False) -> Dict[str, Any]:
+        params = r.get("params") or {}
+        conds = params.get("conditions") or []
+        first_cond = conds[0] if conds else {}
+        hw = params.get("hardware") or {}
+        
+        target_col = first_cond.get("column", "")
+        op = first_cond.get("operator", "equals")
+        val = first_cond.get("value")
+        if not val and "values" in first_cond:
+            val = ", ".join(str(x) for x in first_cond["values"])
+        
+        return {
+            "id": r.get("id"),
+            "name": r.get("name"),
+            "description": r.get("description") or "",
+            "enabled": r.get("enabled", True),
+            "kind": r.get("kind", "charm_terminal_map"),
+            "severity": r.get("severity", "hard"),
+            "weight": r.get("weight", 100),
+            "scope": r.get("scope", "signal"),
+            "is_custom": is_custom or r.get("is_custom", False),
+            "target_column": r.get("target_column") or target_col,
+            "operator": r.get("operator") or op,
+            "match_value": r.get("match_value") or (str(val) if val is not None else ""),
+            "target_charm": r.get("target_charm") or hw.get("charm_type", ""),
+            "target_charm_part": r.get("target_charm_part") or hw.get("charm_part_no", ""),
+            "target_terminal": r.get("target_terminal") or hw.get("terminal_block", ""),
+            "target_terminal_part": r.get("target_terminal_part") or hw.get("charm_tb_part_no", ""),
+            "target_terminals": r.get("target_terminals") or hw.get("charm_tb_terminals", ""),
+            "params": params
+        }
+
+    @staticmethod
+    def get_project_rules(project_id: int, revision_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        hw_config = DBService.get_hardware_config(project_id, revision_id)
+        default_rules = DBService._load_raw_default_rules()
+        
+        overrides = hw_config.rules_override or {}
+        formatted_rules = []
+
+        # Process default rules
+        for raw_r in default_rules:
+            rid = raw_r.get("id")
+            rule_copy = dict(raw_r)
+            if rid in overrides:
+                ov = overrides[rid]
+                if isinstance(ov, dict):
+                    rule_copy.update(ov)
+                elif isinstance(ov, bool):
+                    rule_copy["enabled"] = ov
+            formatted_rules.append(DBService._format_rule_for_response(rule_copy, is_custom=False))
+
+        # Process custom rules
+        custom_list = hw_config.custom_rules or []
+        formatted_custom = [DBService._format_rule_for_response(cr, is_custom=True) for cr in custom_list]
+
+        return formatted_custom + formatted_rules
+
+    @staticmethod
+    def add_project_rule(project_id: int, rule_data: Dict[str, Any], revision_id: Optional[int] = None) -> Dict[str, Any]:
+        hw_config = DBService.get_hardware_config(project_id, revision_id)
+        custom_rules = list(hw_config.custom_rules or [])
+        
+        rid = rule_data.get("id")
+        if not rid or not str(rid).strip():
+            existing_ids = {r.get("id") for r in custom_rules}
+            idx = 1
+            while f"CUST-{idx:03d}" in existing_ids:
+                idx += 1
+            rid = f"CUST-{idx:03d}"
+        
+        params = rule_data.get("params") or {}
+        if not params or not params.get("hardware"):
+            cond = {
+                "column": rule_data.get("target_column") or "signal_type",
+                "operator": rule_data.get("operator") or "equals",
+                "value": rule_data.get("match_value") or ""
+            }
+            if rule_data.get("operator") == "in":
+                cond["values"] = [v.strip() for v in (rule_data.get("match_value") or "").split(",") if v.strip()]
+            
+            params = {
+                "conditions": [cond],
+                "match_mode": "any",
+                "hardware": {
+                    "charm_type": rule_data.get("target_charm") or "AI 4-20 MA HART CHARM",
+                    "charm_part_no": rule_data.get("target_charm_part") or "SE4303T01",
+                    "terminal_block": rule_data.get("target_terminal") or "Standard CHARM Terminal Block",
+                    "charm_tb_part_no": rule_data.get("target_terminal_part") or "SE4501",
+                    "charm_tb_terminals": rule_data.get("target_terminals") or "1, 2"
+                }
+            }
+
+        new_rule = {
+            "id": rid,
+            "name": rule_data.get("name") or f"Custom Rule {rid}",
+            "description": rule_data.get("description") or "",
+            "enabled": rule_data.get("enabled", True),
+            "kind": rule_data.get("kind", "charm_terminal_map"),
+            "severity": rule_data.get("severity", "hard"),
+            "weight": int(rule_data.get("weight", 120)),
+            "scope": rule_data.get("scope", "signal"),
+            "is_custom": True,
+            "target_column": rule_data.get("target_column") or "signal_type",
+            "operator": rule_data.get("operator") or "equals",
+            "match_value": rule_data.get("match_value") or "",
+            "target_charm": rule_data.get("target_charm") or "AI 4-20 MA HART CHARM",
+            "target_charm_part": rule_data.get("target_charm_part") or "SE4303T01",
+            "target_terminal": rule_data.get("target_terminal") or "Standard CHARM Terminal Block",
+            "target_terminal_part": rule_data.get("target_terminal_part") or "SE4501",
+            "target_terminals": rule_data.get("target_terminals") or "1, 2",
+            "params": params
+        }
+
+        replaced = False
+        for i, existing in enumerate(custom_rules):
+            if existing.get("id") == rid:
+                custom_rules[i] = new_rule
+                replaced = True
+                break
+        if not replaced:
+            custom_rules.insert(0, new_rule)
+
+        hw_config.custom_rules = custom_rules
+        DBService.save_hardware_config(project_id, revision_id, hw_config)
+        return DBService._format_rule_for_response(new_rule, is_custom=True)
+
+    @staticmethod
+    def update_project_rule(project_id: int, rule_id: str, rule_data: Dict[str, Any], revision_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        hw_config = DBService.get_hardware_config(project_id, revision_id)
+        custom_rules = list(hw_config.custom_rules or [])
+        
+        for i, r in enumerate(custom_rules):
+            if r.get("id") == rule_id:
+                r.update(rule_data)
+                if r.get("target_charm") or r.get("match_value"):
+                    cond = {
+                        "column": r.get("target_column") or "signal_type",
+                        "operator": r.get("operator") or "equals",
+                        "value": r.get("match_value") or ""
+                    }
+                    if r.get("operator") == "in":
+                        cond["values"] = [v.strip() for v in (r.get("match_value") or "").split(",") if v.strip()]
+                    r["params"] = {
+                        "conditions": [cond],
+                        "match_mode": "any",
+                        "hardware": {
+                            "charm_type": r.get("target_charm") or "AI 4-20 MA HART CHARM",
+                            "charm_part_no": r.get("target_charm_part") or "SE4303T01",
+                            "terminal_block": r.get("target_terminal") or "Standard CHARM Terminal Block",
+                            "charm_tb_part_no": r.get("target_terminal_part") or "SE4501",
+                            "charm_tb_terminals": r.get("target_terminals") or "1, 2"
+                        }
+                    }
+                custom_rules[i] = r
+                hw_config.custom_rules = custom_rules
+                DBService.save_hardware_config(project_id, revision_id, hw_config)
+                return DBService._format_rule_for_response(r, is_custom=True)
+
+        overrides = dict(hw_config.rules_override or {})
+        rule_ov = overrides.get(rule_id, {})
+        if not isinstance(rule_ov, dict):
+            rule_ov = {}
+        rule_ov.update(rule_data)
+        overrides[rule_id] = rule_ov
+        hw_config.rules_override = overrides
+        DBService.save_hardware_config(project_id, revision_id, hw_config)
+        
+        all_rules = DBService.get_project_rules(project_id, revision_id)
+        for r in all_rules:
+            if r.get("id") == rule_id:
+                return r
+        return None
+
+    @staticmethod
+    def delete_project_rule(project_id: int, rule_id: str, revision_id: Optional[int] = None) -> bool:
+        hw_config = DBService.get_hardware_config(project_id, revision_id)
+        custom_rules = list(hw_config.custom_rules or [])
+        initial_len = len(custom_rules)
+        custom_rules = [r for r in custom_rules if r.get("id") != rule_id]
+        
+        if len(custom_rules) < initial_len:
+            hw_config.custom_rules = custom_rules
+            DBService.save_hardware_config(project_id, revision_id, hw_config)
+            return True
+        return False
+
+    @staticmethod
+    def toggle_project_rule(project_id: int, rule_id: str, revision_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        hw_config = DBService.get_hardware_config(project_id, revision_id)
+        custom_rules = list(hw_config.custom_rules or [])
+        
+        for i, r in enumerate(custom_rules):
+            if r.get("id") == rule_id:
+                r["enabled"] = not bool(r.get("enabled", True))
+                custom_rules[i] = r
+                hw_config.custom_rules = custom_rules
+                DBService.save_hardware_config(project_id, revision_id, hw_config)
+                return DBService._format_rule_for_response(r, is_custom=True)
+
+        overrides = dict(hw_config.rules_override or {})
+        cur_ov = overrides.get(rule_id)
+        if isinstance(cur_ov, dict):
+            cur_enabled = cur_ov.get("enabled", True)
+            cur_ov["enabled"] = not cur_enabled
+            overrides[rule_id] = cur_ov
+        elif isinstance(cur_ov, bool):
+            overrides[rule_id] = not cur_ov
+        else:
+            default_rules = DBService._load_raw_default_rules()
+            def_rule = next((r for r in default_rules if r.get("id") == rule_id), None)
+            cur_enabled = def_rule.get("enabled", True) if def_rule else True
+            overrides[rule_id] = {"enabled": not cur_enabled}
+
+        hw_config.rules_override = overrides
+        DBService.save_hardware_config(project_id, revision_id, hw_config)
+        all_rules = DBService.get_project_rules(project_id, revision_id)
+        return next((r for r in all_rules if r.get("id") == rule_id), None)
+
+    @staticmethod
+    def reset_project_rules(project_id: int, revision_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        hw_config = DBService.get_hardware_config(project_id, revision_id)
+        hw_config.custom_rules = []
+        hw_config.rules_override = {}
+        DBService.save_hardware_config(project_id, revision_id, hw_config)
+        return DBService.get_project_rules(project_id, revision_id)
 
     @staticmethod
     def save_imported_signals(project_id: int, revision_id: int, signals: List[SignalRecord], source_filename: Optional[str] = None) -> int:

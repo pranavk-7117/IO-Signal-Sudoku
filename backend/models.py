@@ -46,6 +46,26 @@ class RevisionResponse(BaseModel):
     is_active: bool = False
 
 # --- Hardware & Rule Configuration Models ---
+class ProjectRuleModel(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = ""
+    enabled: bool = True
+    kind: str = "charm_terminal_map"
+    severity: str = "hard"
+    weight: int = 100
+    scope: str = "signal"
+    is_custom: bool = False
+    target_column: Optional[str] = "signal_type"
+    operator: Optional[str] = "equals"
+    match_value: Optional[str] = ""
+    target_charm: Optional[str] = ""
+    target_charm_part: Optional[str] = ""
+    target_terminal: Optional[str] = ""
+    target_terminal_part: Optional[str] = ""
+    target_terminals: Optional[str] = ""
+    params: Dict[str, Any] = Field(default_factory=dict)
+
 class RuleConfigModel(BaseModel):
     enforce_logical_grouping: bool = True
     enforce_ab_redundancy_separation: bool = True
@@ -57,6 +77,7 @@ class RuleConfigModel(BaseModel):
     prioritize_cabinet_packing: bool = True
     preserve_previous_assignments: bool = True
     reserve_first_baseplate_for_cabinet_alarms: bool = True
+    custom_rules: List[Dict[str, Any]] = Field(default_factory=list)
 
 class HardwareConfigModel(BaseModel):
     cabinets_count: int = 2
@@ -66,6 +87,8 @@ class HardwareConfigModel(BaseModel):
     spare_percentage: float = 10.0
     spare_baseplate_percent: float = 0.0
     rules: RuleConfigModel = Field(default_factory=RuleConfigModel)
+    custom_rules: List[Dict[str, Any]] = Field(default_factory=list)
+    rules_override: Optional[Dict[str, Any]] = None
     compatibility_matrix: Dict[str, Dict[str, str]] = Field(default_factory=lambda: {
         "AI": {"charm": "AI 4-20 MA HART CHARM", "charm_part": "SE4303T01", "terminal": "Standard CHARM Terminal Block", "terminal_part": "SE4501", "terminals": "1, 2"},
         "AIR": {"charm": "AI 4-20 MA HART CHARM", "charm_part": "SE4303T01", "terminal": "Standard CHARM Terminal Block", "terminal_part": "SE4501", "terminals": "1, 2"},
