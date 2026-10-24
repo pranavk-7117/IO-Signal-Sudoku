@@ -51,7 +51,8 @@ class RuleConfigModel(BaseModel):
     enforce_ab_redundancy_separation: bool = True
     enforce_cable_grouping: bool = True
     enforce_pair_order: bool = True
-    spare_percentage: float = 10.0  # percentage of reserved CHARMs
+    spare_percentage: float = 10.0
+    spare_baseplate_percent: float = 0.0  # percentage of reserved CHARMs
     allow_cross_baseplate_cables: bool = False
     prioritize_cabinet_packing: bool = True
     preserve_previous_assignments: bool = True
@@ -63,6 +64,7 @@ class HardwareConfigModel(BaseModel):
     baseplates_per_cioc: int = 8
     charms_per_baseplate: int = 12
     spare_percentage: float = 10.0
+    spare_baseplate_percent: float = 0.0
     rules: RuleConfigModel = Field(default_factory=RuleConfigModel)
     compatibility_matrix: Dict[str, Dict[str, str]] = Field(default_factory=lambda: {
         "AI": {"charm": "AI 4-20 MA HART CHARM", "charm_part": "SE4303T01", "terminal": "Standard CHARM Terminal Block", "terminal_part": "SE4501", "terminals": "1, 2"},
