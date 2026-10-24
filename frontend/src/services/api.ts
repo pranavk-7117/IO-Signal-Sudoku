@@ -4,7 +4,9 @@ import {
   RevisionComparison, AuditLog,
   RiskAssessmentResponse, ChatRequest, ChatResponse,
   CounterfactualResponse, BlastRadiusResponse,
-  PreflightLintResponse, ReferenceScorecardResponse
+  PreflightLintResponse, ReferenceScorecardResponse,
+  PreprocessingAnalysisResponse, ParetoResponse,
+  WiredSpareTakeoverResponse, DeliverablesPackResponse, FieldQRLabel
 } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
@@ -454,6 +456,73 @@ export const api = {
       : `${API_BASE}/projects/${projectId}/reference-scorecard`;
     const res = await fetch(url);
     if (!res.ok) throw new Error('Failed to fetch reference scorecard');
+    return res.json();
+  },
+
+  // Industrial Preprocessing & Conflict Graph
+  getPreprocessingAnalysis: async (projectId: number, revisionId?: number): Promise<PreprocessingAnalysisResponse> => {
+    const url = revisionId
+      ? `${API_BASE}/projects/${projectId}/preprocessing-analysis?revision_id=${revisionId}`
+      : `${API_BASE}/projects/${projectId}/preprocessing-analysis`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Failed to fetch preprocessing analysis');
+    return res.json();
+  },
+
+  // Pareto Layout Alternatives
+  getParetoAlternatives: async (projectId: number, revisionId?: number): Promise<ParetoResponse> => {
+    const url = revisionId
+      ? `${API_BASE}/projects/${projectId}/pareto-alternatives?revision_id=${revisionId}`
+      : `${API_BASE}/projects/${projectId}/pareto-alternatives`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Failed to fetch Pareto alternatives');
+    return res.json();
+  },
+
+  // Wired-Spare Takeover ($0 Cost Revisions)
+  getWiredSpareTakeover: async (projectId: number, payload?: any, revisionId?: number): Promise<WiredSpareTakeoverResponse> => {
+    const url = revisionId
+      ? `${API_BASE}/projects/${projectId}/wired-spare-takeover?revision_id=${revisionId}`
+      : `${API_BASE}/projects/${projectId}/wired-spare-takeover`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    });
+    if (!res.ok) throw new Error('Failed to evaluate wired spare takeover');
+    return res.json();
+  },
+
+  applyWiredSpareTakeover: async (projectId: number, matches: any[], revisionId?: number) => {
+    const url = revisionId
+      ? `${API_BASE}/projects/${projectId}/apply-wired-spare-takeover?revision_id=${revisionId}`
+      : `${API_BASE}/projects/${projectId}/apply-wired-spare-takeover`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ takeover_matches: matches })
+    });
+    if (!res.ok) throw new Error('Failed to apply wired spare takeover');
+    return res.json();
+  },
+
+  // Deliverables Pack (Cable Termination, Cable Schedule, Loop Check, FAT)
+  getDeliverablesPack: async (projectId: number, revisionId?: number): Promise<DeliverablesPackResponse> => {
+    const url = revisionId
+      ? `${API_BASE}/projects/${projectId}/deliverables-pack?revision_id=${revisionId}`
+      : `${API_BASE}/projects/${projectId}/deliverables-pack`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Failed to generate deliverables pack');
+    return res.json();
+  },
+
+  // Field QR Labels
+  getQRLabels: async (projectId: number, revisionId?: number): Promise<FieldQRLabel[]> => {
+    const url = revisionId
+      ? `${API_BASE}/projects/${projectId}/qr-labels?revision_id=${revisionId}`
+      : `${API_BASE}/projects/${projectId}/qr-labels`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Failed to fetch field QR labels');
     return res.json();
   }
 };

@@ -24,6 +24,7 @@ import { RevisionComparison, RevisionDiffItem, Assignment } from '../types';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { MetricCard } from '../components/ui/MetricCard';
 import { ExplainabilityDrawer } from '../components/ExplainabilityDrawer';
+import { WiredSpareTakeoverModal } from '../components/WiredSpareTakeoverModal';
 
 export const RevisionManagerPage: React.FC = () => {
   const { currentProject, revisions, currentRevision, refreshRevisions, refreshProjects, setCurrentRevisionById } = useProject();
@@ -48,6 +49,7 @@ export const RevisionManagerPage: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [revCode, setRevCode] = useState('');
   const [revDesc, setRevDesc] = useState('');
+  const [showTakeoverModal, setShowTakeoverModal] = useState(false);
 
   // Filter
   const [changeFilter, setChangeFilter] = useState('');
@@ -234,6 +236,15 @@ export const RevisionManagerPage: React.FC = () => {
               <span>Export Impact Report</span>
             </a>
           )}
+
+          <button
+            onClick={() => setShowTakeoverModal(true)}
+            className="flex items-center space-x-1.5 px-3 py-2 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 rounded-lg hover:bg-emerald-100 transition-colors shadow-2xs cursor-pointer"
+            title="Scan existing wired spares on controller to allocate added signals at $0 hardware cost"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Spare Takeover ($0 Cost)</span>
+          </button>
 
           <button
             onClick={() => {
@@ -798,6 +809,20 @@ export const RevisionManagerPage: React.FC = () => {
           revisionId={targetRevId || currentRevision?.id}
           tag={explainingTag}
           onClose={() => setExplainingTag(null)}
+        />
+      )}
+
+      {/* Wired-Spare Takeover Modal */}
+      {showTakeoverModal && currentProject && (
+        <WiredSpareTakeoverModal
+          projectId={currentProject.id}
+          revisionId={targetRevId || currentRevision?.id}
+          onTakeoverApplied={() => {
+            runComparison();
+            refreshProjects();
+            setShowTakeoverModal(false);
+          }}
+          onClose={() => setShowTakeoverModal(false)}
         />
       )}
     </div>

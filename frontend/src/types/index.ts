@@ -379,3 +379,174 @@ export interface ReferenceScorecardResponse {
   total_categories: number;
   scorecard_items: ScorecardItem[];
 }
+
+export interface PreprocessingAnalysisResponse {
+  total_signals_received: number;
+  deleted_signals_vacated: number;
+  internal_alarms_preassigned: number;
+  pinned_revision_signals_frozen: number;
+  active_signals_fed_to_solver: number;
+  solver_search_space_reduction_pct: number;
+  technical_room_partitions: Record<string, number>;
+  conflict_graph: {
+    node_count: number;
+    edge_count: number;
+    nodes: Array<{
+      id: string;
+      label: string;
+      type: string;
+      redundancy: string;
+      technical_room: string;
+      signal_count: number;
+    }>;
+    edges: Array<{
+      source: string;
+      target: string;
+      type: string;
+      weight: number;
+    }>;
+  };
+}
+
+export interface ParetoAlternative {
+  id: string;
+  name: string;
+  badge: string;
+  badge_color: 'emerald' | 'blue' | 'purple' | 'amber';
+  summary: string;
+  boq: {
+    system_cabinets: number;
+    marshalling_cabinets: number;
+    controllers: number;
+    cioc_carriers: number;
+    baseplates: number;
+    total_channels: number;
+    operating_signals: number;
+    cabinet_alarms: number;
+    wired_spares: number;
+    spare_slots_covers: number;
+  };
+  metrics: {
+    estimated_hardware_cost_usd: number;
+    overall_footprint_sqm: number;
+    spare_capacity_pct: number;
+    resilience_score: number;
+    expansion_flexibility: string;
+    recommended_for: string;
+  };
+  pros: string[];
+  cons: string[];
+}
+
+export interface ParetoResponse {
+  dataset_signals_count: number;
+  alternatives: ParetoAlternative[];
+}
+
+export interface WiredSpareTakeoverMatch {
+  new_signal_tag: string;
+  signal_type: string;
+  description: string;
+  target_wired_spare_tag: string;
+  controller: string;
+  cabinet_id: string;
+  cioc_id: string;
+  baseplate_id: string;
+  channel_no: number;
+  charm_type: string;
+  terminal_block: string;
+  hardware_cost_delta_usd: number;
+  status: string;
+  engineering_rationale: string;
+}
+
+export interface WiredSpareTakeoverResponse {
+  total_new_signals_evaluated: number;
+  wired_spares_taken_over_count: number;
+  unmatched_signals_requiring_new_slots: number;
+  total_hardware_cost_saved_usd: number;
+  takeover_matches: WiredSpareTakeoverMatch[];
+  takeover_summary: string;
+}
+
+export interface TerminationRow {
+  pair_number: number;
+  wire_color_pos: string;
+  wire_color_neg: string;
+  signal_tag: string;
+  description: string;
+  signal_type: string;
+  terminal_block: string;
+  terminals: string;
+  hardware_address: string;
+  loop_name: string;
+}
+
+export interface TerminationSchedule {
+  cable_id: string;
+  total_pairs: number;
+  technical_room: string;
+  termination_rows: TerminationRow[];
+}
+
+export interface CableScheduleItem {
+  cable_id: string;
+  technical_room: string;
+  destination_cabinet: string;
+  cable_size_pairs: number;
+  pairs_used: number;
+  pairs_spare: number;
+  utilisation_pct: number;
+  cable_type: string;
+  status: string;
+}
+
+export interface LoopCheckSheetItem {
+  sheet_id: string;
+  loop_name: string;
+  tag: string;
+  description: string;
+  signal_type: string;
+  calibrated_range: string;
+  hardware_location: string;
+  charm_module: string;
+  terminal_block: string;
+  loop_check_status: string;
+  checked_by: string;
+  date: string;
+}
+
+export interface DeliverablesPackResponse {
+  project_name: string;
+  revision_code: string;
+  generated_timestamp: string;
+  termination_schedules: TerminationSchedule[];
+  master_cable_schedule: CableScheduleItem[];
+  loop_check_sheets: LoopCheckSheetItem[];
+  total_loops_count: number;
+  fat_checklist: Array<{
+    section: string;
+    item: string;
+    requirement: string;
+    status: string;
+    verified_by: string;
+  }>;
+}
+
+export interface FieldQRLabel {
+  label_id: string;
+  cabinet: string;
+  cioc: string;
+  baseplate: string;
+  technical_room: string;
+  assigned_signals_count: number;
+  qr_payload: string;
+  channels: Array<{
+    channel: number;
+    tag: string;
+    signal_type: string;
+    cable_id: string;
+    pair: number;
+    is_spare: boolean;
+  }>;
+}

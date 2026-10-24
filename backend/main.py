@@ -33,6 +33,10 @@ from engine.risk_engine import RiskEngine
 from engine.chatbot import ChatbotService
 from engine.counterfactual_engine import CounterfactualEngine, BlastRadiusSimulator
 from engine.preflight_lint import PreflightLintDoctor, ReferenceScorecardEngine
+from engine.preprocessing_pipeline import SignalPreprocessor
+from engine.pareto_layout import ParetoLayoutEngine
+from engine.wired_spare_takeover import WiredSpareTakeoverEngine
+from engine.deliverables_generator import DeliverablesGenerator
 from demo_data import seed_demo_project, SAMPLE_DIR
 
 if os.environ.get("VERCEL"):
@@ -855,6 +859,117 @@ def get_reference_scorecard(project_id: int, revision_id: Optional[int] = None):
 
     assignments = DBService.get_assignments(project_id, revision_id)
     return ReferenceScorecardEngine.generate_scorecard(assignments)
+
+# --- Industrial Preprocessing & Scalability Analysis ---
+@app.get("/api/projects/{project_id}/preprocessing-analysis")
+def get_preprocessing_analysis(project_id: int, revision_id: Optional[int] = None):
+    if not revision_id:
+        revs = DBService.get_revisions(project_id)
+        active_rev = next((r for r in revs if r["is_active"]), revs[0] if revs else None)
+        if not active_rev:
+            raise HTTPException(status_code=404, detail="No revision found")
+        revision_id = active_rev["id"]
+
+    signals = DBService.get_imported_signals(project_id, revision_id)
+    prev_assigns = DBService.get_previous_assignments(project_id, revision_id)
+    return SignalPreprocessor.preprocess_dataset(signals, prev_assigns)
+
+# --- Layout Alternatives (Pareto Front) ---
+@app.get("/api/projects/{project_id}/pareto-alternatives")
+def get_pareto_alternatives(project_id: int, revision_id: Optional[int] = None):
+    if not revision_id:
+        revs = DBService.get_revisions(project_id)
+        active_rev = next((r for r in revs if r["is_active"]), revs[0] if revs else None)
+        if not active_rev:
+            raise HTTPException(status_code=404, detail="No revision found")
+        revision_id = active_rev["id"]
+
+    hw_config = DBService.get_hardware_config(project_id, revision_id)
+    signals = DBService.get_imported_signals(project_id, revision_id)
+    assignments = DBService.get_assignments(project_id, revision_id)
+    return ParetoLayoutEngine.generate_pareto_alternatives(hw_config, signals, assignments)
+
+# --- Wired-Spare Takeover ($0 Cost Revisions) ---
+@app.post("/api/projects/{project_id}/wired-spare-takeover")
+def evaluate_wired_spare_takeover(
+    project_id: int,
+    payload: Dict[str, Any] = None,
+    revision_id: Optional[int] = None
+):
+    if not revision_id:
+        revs = DBService.get_revisions(project_id)
+        active_rev = next((r for r in revs if r["is_active"]), revs[0] if revs else None)
+        if not active_rev:
+            raise HTTPException(status_code=404, detail="No revision found")
+        revision_id = active_rev["id"]
+
+    assignments = DBService.get_assignments(project_id, revision_id)
+    
+    # If payload contains specific new signals, use them; otherwise find unassigned signals or newly added signals
+    raw_signals = payload.get("signals") if payload else None
+    if raw_signals:
+        new_signals = [SignalRecord(**s) for s in raw_signals]
+    else:
+        # Auto-detect signals in revision that are unallocated or added
+        all_signals = DBService.get_imported_signals(project_id, revision_id)
+        allocated_tags = set(a.tag for a in assignments if a.status == "Allocated" and getattr(a, "tag_status", "") == "Field")
+        new_signals = [s for s in all_signals if s.tag not in allocated_tags]
+
+    return WiredSpareTakeoverEngine.identify_takeover_candidates(new_signals, assignments)
+
+@app.post("/api/projects/{project_id}/apply-wired-spare-takeover")
+def apply_wired_spare_takeover(
+    project_id: int,
+    payload: Dict[str, Any],
+    revision_id: Optional[int] = None
+):
+    if not revision_id:
+        revs = DBService.get_revisions(project_id)
+        active_rev = next((r for r in revs if r["is_active"]), revs[0] if revs else None)
+        if not active_rev:
+            raise HTTPException(status_code=404, detail="No revision found")
+        revision_id = active_rev["id"]
+
+    matches = payload.get("takeover_matches", [])
+    assignments = DBService.get_assignments(project_id, revision_id)
+    updated = WiredSpareTakeoverEngine.apply_takeover_to_assignments(assignments, matches)
+    DBService.save_assignments(project_id, revision_id, updated)
+    return {"status": "SUCCESS", "applied_count": len(matches)}
+
+# --- Engineering Deliverables Pack ---
+@app.get("/api/projects/{project_id}/deliverables-pack")
+def get_deliverables_pack(project_id: int, revision_id: Optional[int] = None):
+    project = DBService.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if not revision_id:
+        revs = DBService.get_revisions(project_id)
+        active_rev = next((r for r in revs if r["is_active"]), revs[0] if revs else None)
+        if not active_rev:
+            raise HTTPException(status_code=404, detail="No revision found")
+        revision_id = active_rev["id"]
+        rev_code = active_rev["revision_code"]
+    else:
+        revs = DBService.get_revisions(project_id)
+        match_rev = next((r for r in revs if r["id"] == revision_id), None)
+        rev_code = match_rev["revision_code"] if match_rev else "Rev A"
+
+    assignments = DBService.get_assignments(project_id, revision_id)
+    return DeliverablesGenerator.generate_deliverables_pack(project.name, rev_code, assignments)
+
+# --- Field QR Labels ---
+@app.get("/api/projects/{project_id}/qr-labels")
+def get_field_qr_labels(project_id: int, revision_id: Optional[int] = None):
+    if not revision_id:
+        revs = DBService.get_revisions(project_id)
+        active_rev = next((r for r in revs if r["is_active"]), revs[0] if revs else None)
+        if not active_rev:
+            raise HTTPException(status_code=404, detail="No revision found")
+        revision_id = active_rev["id"]
+
+    assignments = DBService.get_assignments(project_id, revision_id)
+    return DeliverablesGenerator.generate_field_qr_labels(assignments)
 
 # --- Audit Logs & Demo Seed ---
 @app.get("/api/audit-logs/{project_id}", response_model=List[AuditLogModel])

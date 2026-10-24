@@ -10,7 +10,12 @@ import {
   Flame,
   Stethoscope,
   Award,
-  Eye
+  Eye,
+  Sliders,
+  Sparkles,
+  FileText,
+  QrCode,
+  Network
 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { api } from '../services/api';
@@ -23,6 +28,11 @@ import { BlastRadiusModal } from '../components/BlastRadiusModal';
 import { PreflightDoctorModal } from '../components/PreflightDoctorModal';
 import { ReferenceScorecardModal } from '../components/ReferenceScorecardModal';
 import { CabinetElevationView } from '../components/CabinetElevationView';
+import { ParetoLayoutModal } from '../components/ParetoLayoutModal';
+import { WiredSpareTakeoverModal } from '../components/WiredSpareTakeoverModal';
+import { DeliverablesPackModal } from '../components/DeliverablesPackModal';
+import { QRLabelsModal } from '../components/QRLabelsModal';
+import { PreprocessingPipelineModal } from '../components/PreprocessingPipelineModal';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
@@ -36,11 +46,16 @@ export const UtilisationPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [explainingTag, setExplainingTag] = useState<string | null>(null);
 
-  // Tier 1 Differentiators Modals State
+  // Tier 1 & Tier 2 Differentiators Modals State
   const [showPreflightModal, setShowPreflightModal] = useState<boolean>(false);
   const [showBlastRadiusModal, setShowBlastRadiusModal] = useState<boolean>(false);
   const [showScorecardModal, setShowScorecardModal] = useState<boolean>(false);
   const [showCounterfactualModal, setShowCounterfactualModal] = useState<boolean>(false);
+  const [showParetoModal, setShowParetoModal] = useState<boolean>(false);
+  const [showTakeoverModal, setShowTakeoverModal] = useState<boolean>(false);
+  const [showDeliverablesModal, setShowDeliverablesModal] = useState<boolean>(false);
+  const [showQRModal, setShowQRModal] = useState<boolean>(false);
+  const [showPreprocessingModal, setShowPreprocessingModal] = useState<boolean>(false);
   const [counterfactualSlot, setCounterfactualSlot] = useState<{
     cabinet: string;
     cioc: string;
@@ -108,35 +123,85 @@ export const UtilisationPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {/* Layout Alternatives (Pareto Front) */}
+          <button
+            onClick={() => setShowParetoModal(true)}
+            className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs font-bold text-purple-700 bg-purple-50 border border-purple-300 rounded-lg hover:bg-purple-100 transition-colors shadow-2xs"
+            title="Pareto Trade-offs: Min CapEx vs Max Spares vs Min Churn"
+          >
+            <Sliders className="w-3.5 h-3.5" />
+            <span>Pareto Layouts</span>
+          </button>
+
+          {/* Wired-Spare Takeover Button */}
+          <button
+            onClick={() => setShowTakeoverModal(true)}
+            className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 rounded-lg hover:bg-emerald-100 transition-colors shadow-2xs"
+            title="Wired-Spare Takeover: $0 Hardware Cost Revisions"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Spare Takeover ($0)</span>
+          </button>
+
+          {/* Deliverables Pack */}
+          <button
+            onClick={() => setShowDeliverablesModal(true)}
+            className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-300 rounded-lg hover:bg-blue-100 transition-colors shadow-2xs"
+            title="Termination Schedules, Cable List, Loop Sheets & FAT Checklist"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Deliverables Pack</span>
+          </button>
+
+          {/* QR Labels */}
+          <button
+            onClick={() => setShowQRModal(true)}
+            className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 border border-slate-300 rounded-lg hover:bg-slate-200 transition-colors shadow-2xs"
+            title="Printable QR Code Stickers for Physical Marshalling Cabinets"
+          >
+            <QrCode className="w-3.5 h-3.5" />
+            <span>Field QR Labels</span>
+          </button>
+
+          {/* Preprocessing Graph Pipeline */}
+          <button
+            onClick={() => setShowPreprocessingModal(true)}
+            className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs font-bold text-cyan-700 bg-cyan-50 border border-cyan-300 rounded-lg hover:bg-cyan-100 transition-colors shadow-2xs"
+            title="Industrial Scalability: Technical Room Partitions & Conflict Graph"
+          >
+            <Network className="w-3.5 h-3.5" />
+            <span>Preprocessing</span>
+          </button>
+
           {/* Pre-Flight Doctor Button */}
           <button
             onClick={() => setShowPreflightModal(true)}
-            className="flex items-center space-x-1.5 px-3 py-2 text-xs font-bold text-teal-700 bg-teal-50 border border-teal-300 rounded-lg hover:bg-teal-100 transition-colors shadow-2xs"
+            className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs font-bold text-teal-700 bg-teal-50 border border-teal-300 rounded-lg hover:bg-teal-100 transition-colors shadow-2xs"
             title="DeltaV Commissioning Pre-Flight Doctor & Mistake Checker"
           >
             <Stethoscope className="w-3.5 h-3.5" />
-            <span>Pre-Flight Doctor</span>
+            <span>Doctor (Lint)</span>
           </button>
 
           {/* Blast Radius Simulator Button */}
           <button
             onClick={() => setShowBlastRadiusModal(true)}
-            className="flex items-center space-x-1.5 px-3 py-2 text-xs font-bold text-rose-700 bg-rose-50 border border-rose-300 rounded-lg hover:bg-rose-100 transition-colors shadow-2xs"
+            className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs font-bold text-rose-700 bg-rose-50 border border-rose-300 rounded-lg hover:bg-rose-100 transition-colors shadow-2xs"
             title="Simulate CIOC / Cabinet Failure and A/B Loop Resilience"
           >
             <Flame className="w-3.5 h-3.5" />
-            <span>Blast-Radius Sim</span>
+            <span>Blast-Radius</span>
           </button>
 
           {/* Golden Reference Parity Scorecard Button */}
           <button
             onClick={() => setShowScorecardModal(true)}
-            className="flex items-center space-x-1.5 px-3 py-2 text-xs font-bold text-amber-700 bg-amber-50 border border-amber-300 rounded-lg hover:bg-amber-100 transition-colors shadow-2xs"
+            className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs font-bold text-amber-700 bg-amber-50 border border-amber-300 rounded-lg hover:bg-amber-100 transition-colors shadow-2xs"
             title="Official Reference-Comparison Scorecard (100% Parity)"
           >
             <Award className="w-3.5 h-3.5" />
-            <span>Parity Scorecard</span>
+            <span>Scorecard</span>
           </button>
 
           {/* Why Not Here Counterfactual Button */}
@@ -145,7 +210,7 @@ export const UtilisationPage: React.FC = () => {
               setCounterfactualSlot(null);
               setShowCounterfactualModal(true);
             }}
-            className="flex items-center space-x-1.5 px-3 py-2 text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-300 rounded-lg hover:bg-indigo-100 transition-colors shadow-2xs"
+            className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-300 rounded-lg hover:bg-indigo-100 transition-colors shadow-2xs"
             title="Why Not Here? Candidate Slot Mathematical Feasibility Checker"
           >
             <HelpCircle className="w-3.5 h-3.5" />
@@ -156,10 +221,10 @@ export const UtilisationPage: React.FC = () => {
             href={currentProject && currentRevision ? api.getExportUrl('utilisation', currentProject.id, currentRevision.id) : '#'}
             target="_blank"
             rel="noreferrer"
-            className="flex items-center space-x-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+            className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
           >
             <Download className="w-3.5 h-3.5 text-blue-600" />
-            <span>Export Report</span>
+            <span>Export</span>
           </a>
         </div>
       </div>
@@ -478,6 +543,55 @@ export const UtilisationPage: React.FC = () => {
             setShowCounterfactualModal(false);
             setCounterfactualSlot(null);
           }}
+        />
+      )}
+
+      {/* Pareto Multi-Objective Layout Alternatives Modal */}
+      {showParetoModal && currentProject && (
+        <ParetoLayoutModal
+          projectId={currentProject.id}
+          revisionId={currentRevision?.id}
+          onClose={() => setShowParetoModal(false)}
+        />
+      )}
+
+      {/* Wired-Spare Takeover ($0 Cost Revisions) Modal */}
+      {showTakeoverModal && currentProject && (
+        <WiredSpareTakeoverModal
+          projectId={currentProject.id}
+          revisionId={currentRevision?.id}
+          onTakeoverApplied={() => {
+            loadUtilisation();
+            setShowTakeoverModal(false);
+          }}
+          onClose={() => setShowTakeoverModal(false)}
+        />
+      )}
+
+      {/* Engineering Deliverables Pack Modal */}
+      {showDeliverablesModal && currentProject && (
+        <DeliverablesPackModal
+          projectId={currentProject.id}
+          revisionId={currentRevision?.id}
+          onClose={() => setShowDeliverablesModal(false)}
+        />
+      )}
+
+      {/* Field QR Labels Modal */}
+      {showQRModal && currentProject && (
+        <QRLabelsModal
+          projectId={currentProject.id}
+          revisionId={currentRevision?.id}
+          onClose={() => setShowQRModal(false)}
+        />
+      )}
+
+      {/* Industrial Preprocessing & Conflict Graph Modal */}
+      {showPreprocessingModal && currentProject && (
+        <PreprocessingPipelineModal
+          projectId={currentProject.id}
+          revisionId={currentRevision?.id}
+          onClose={() => setShowPreprocessingModal(false)}
         />
       )}
     </div>
