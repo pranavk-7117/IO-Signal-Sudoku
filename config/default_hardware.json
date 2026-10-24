@@ -1,0 +1,65 @@
+{
+  "system_info": "DeltaV CHARMs Industrial Electronic Marshalling",
+  "version": "2.0.0",
+  "hardware_hierarchy": {
+    "charms_per_baseplate": 12,
+    "baseplates_per_cioc": 8,
+    "ciocs_per_cabinet": 4,
+    "default_cabinets_count": 2,
+    "channels_per_cioc": 96,
+    "channels_per_cabinet": 384
+  },
+  "cable_specifications": {
+    "standard_sizes": [2, 6, 12, 24],
+    "max_pairs_per_baseplate": 12,
+    "split_policy": {
+      "sizes_up_to_12_split": false,
+      "size_24_span_baseplates": 2
+    }
+  },
+  "spare_capacity": {
+    "spare_baseplate_percent": 10.0,
+    "wired_spare_percent_per_io_type": 10.0,
+    "unpopulated_slot_label": "Spare Slot",
+    "wired_spare_label": "Wired Spare"
+  },
+  "naming_patterns": {
+    "system_cabinet": "{area}-DCS-{unit}-{seq:02d}",
+    "controller": "{area}CTL{unit}{seq:02d}",
+    "marshalling_cabinet": "{area}-DCM-{unit}-{seq:02d}",
+    "cioc": "{area}DCIOC{unit}{seq:03d}",
+    "baseplate": "{cioc_seq:03d}-CBP-{bp_num}",
+    "wired_spare_tag": "{area}DSP{controller_seq:02d}{cioc_seq:03d}{charm_no:02d}"
+  },
+  "redundancy_mappings": {
+    "A": [
+      "A",
+      "DUTY",
+      "PRIMARY",
+      "MAIN",
+      "TRAIN A",
+      "TRAIN-A",
+      "TRAINA",
+      "A-CONTROL",
+      "A_CONTROL",
+      "A TRAIN",
+      "SYSTEM 1",
+      "SYS1"
+    ],
+    "B": [
+      "B",
+      "STANDBY",
+      "SECONDARY",
+      "BACKUP",
+      "TRAIN B",
+      "TRAIN-B",
+      "TRAINB",
+      "B-CONTROL",
+      "B_CONTROL",
+      "B TRAIN",
+      "B-ALARM",
+      "SYSTEM 2",
+      "SYS2"
+    ]
+  }
+}

@@ -27,6 +27,8 @@ yarn-error.log*
 *.db
 *.sqlite3
 backend/data/*.db
+backend/data/*.xlsx
+backend/data/*.json
 backend/data/uploads/*
 backend/data/reports/*
 !backend/data/uploads/.gitkeep

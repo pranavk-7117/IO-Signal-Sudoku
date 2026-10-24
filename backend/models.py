@@ -51,10 +51,12 @@ class RuleConfigModel(BaseModel):
     enforce_ab_redundancy_separation: bool = True
     enforce_cable_grouping: bool = True
     enforce_pair_order: bool = True
-    spare_percentage: float = 10.0  # percentage of reserved CHARMs
+    spare_percentage: float = 10.0
+    spare_baseplate_percent: float = 0.0  # percentage of reserved CHARMs
     allow_cross_baseplate_cables: bool = False
     prioritize_cabinet_packing: bool = True
     preserve_previous_assignments: bool = True
+    reserve_first_baseplate_for_cabinet_alarms: bool = True
 
 class HardwareConfigModel(BaseModel):
     cabinets_count: int = 2
@@ -62,15 +64,24 @@ class HardwareConfigModel(BaseModel):
     baseplates_per_cioc: int = 8
     charms_per_baseplate: int = 12
     spare_percentage: float = 10.0
+    spare_baseplate_percent: float = 0.0
     rules: RuleConfigModel = Field(default_factory=RuleConfigModel)
     compatibility_matrix: Dict[str, Dict[str, str]] = Field(default_factory=lambda: {
-        "AI": {"charm": "AI 4-20mA HART CHARM", "terminal": "Standard 2-Wire Terminal Block"},
-        "AO": {"charm": "AO 4-20mA HART CHARM", "terminal": "Standard 2-Wire Terminal Block"},
-        "DI": {"charm": "DI 24VDC Dry Contact CHARM", "terminal": "Standard 2-Wire Terminal Block"},
-        "DO": {"charm": "DO 24VDC High-Side CHARM", "terminal": "Standard 2-Wire Terminal Block"},
-        "DO-SOV": {"charm": "Isolated DO 24VDC CHARM", "terminal": "Fused Injected Power Terminal Block"},
-        "RTD": {"charm": "RTD / Resistance CHARM", "terminal": "RTD 3/4-Wire Terminal Block"},
-        "TC": {"charm": "Thermocouple / mV CHARM", "terminal": "TC Cold-Junction Terminal Block"}
+        "AI": {"charm": "AI 4-20 MA HART CHARM", "charm_part": "SE4303T01", "terminal": "Standard CHARM Terminal Block", "terminal_part": "SE4501", "terminals": "1, 2"},
+        "AIR": {"charm": "AI 4-20 MA HART CHARM", "charm_part": "SE4303T01", "terminal": "Standard CHARM Terminal Block", "terminal_part": "SE4501", "terminals": "1, 2"},
+        "AIR-RTD": {"charm": "RTD Input Charm", "charm_part": "SE4303T03", "terminal": "Standard CHARM Terminal Block", "terminal_part": "SE4501", "terminals": "1, 2, 4"},
+        "AIR-4WIRE": {"charm": "AI 4-20 MA HART CHARM", "charm_part": "SE4303T01", "terminal": "Standard CHARM Terminal Block", "terminal_part": "SE4501", "terminals": "-, 2, 4"},
+        "AO": {"charm": "AO 4-20 MA HART CHARM", "charm_part": "SE4304T01", "terminal": "Standard CHARM Terminal Block", "terminal_part": "SE4501", "terminals": "1, 2"},
+        "AOR": {"charm": "AO 4-20 MA HART CHARM", "charm_part": "SE4304T01", "terminal": "Standard CHARM Terminal Block", "terminal_part": "SE4501", "terminals": "1, 2"},
+        "DI": {"charm": "DISCRETE INPUT CHARM; 24 VDC DRY CONTACT: LOW SIDE SENSE", "charm_part": "SE4301T02", "terminal": "Standard CHARM Terminal Block", "terminal_part": "SE4501", "terminals": "1, 2"},
+        "DIR": {"charm": "DISCRETE INPUT CHARM; 24 VDC DRY CONTACT: LOW SIDE SENSE", "charm_part": "SE4301T02", "terminal": "Standard CHARM Terminal Block", "terminal_part": "SE4501", "terminals": "1, 2"},
+        "DO": {"charm": "DISCRETE OUTPUT CHARM; 24 VDC; HIGH SIDE", "charm_part": "SE4302T01", "terminal": "Standard CHARM Terminal Block", "terminal_part": "SE4501", "terminals": "1, 2"},
+        "DOR": {"charm": "DISCRETE OUTPUT CHARM; 24 VDC; HIGH SIDE", "charm_part": "SE4302T01", "terminal": "Standard CHARM Terminal Block", "terminal_part": "SE4501", "terminals": "1, 2"},
+        "DO-SOV": {"charm": "DO 24V DC Isolated", "charm_part": "SE4302T02", "terminal": "Fused-Injected-Power Terminal Block", "terminal_part": "SE4502", "terminals": "-, 2, 4"},
+        "DOR-SOV": {"charm": "DO 24V DC Isolated", "charm_part": "SE4302T02", "terminal": "Fused-Injected-Power Terminal Block", "terminal_part": "SE4502", "terminals": "-, 2, 4"},
+        "RTD": {"charm": "RTD Input Charm", "charm_part": "SE4303T03", "terminal": "Standard CHARM Terminal Block", "terminal_part": "SE4501", "terminals": "1, 2, 4"},
+        "TC": {"charm": "Thermocouple / mV CHARM", "charm_part": "SE4303T02", "terminal": "TC Cold-Junction Terminal Block", "terminal_part": "SE4501", "terminals": "1, 2"},
+        "SPARE": {"charm": "CHARM PROTECTION COVER", "charm_part": "SE6103", "terminal": "Standard CHARM Terminal Block", "terminal_part": "SE4501", "terminals": "-"}
     })
 
 # --- Signal Import & Mapping Models ---
@@ -91,15 +102,24 @@ class SignalRecord(BaseModel):
     tag: str
     description: Optional[str] = ""
     signal_type: str
+    signal_level: Optional[str] = ""
+    electrical_spec: Optional[str] = ""
+    instrument_type: Optional[str] = ""
+    external_power: Optional[str] = ""
     cable_id: Optional[str] = ""
     pair_number: Optional[int] = None
-    redundancy: Optional[str] = ""  # 'A', 'B', or empty
+    redundancy: Optional[str] = ""  # 'A', 'B', 'A-CONTROL', etc.
     logical_group: Optional[str] = ""
     segregation: Optional[str] = ""
     service_id: Optional[str] = ""
+    operating_area: Optional[str] = ""
+    technical_room: Optional[str] = ""
+    loop_name: Optional[str] = ""
+    tag_status: Optional[str] = "Field"
     existing_cabinet: Optional[str] = None
     existing_cioc: Optional[str] = None
     existing_baseplate: Optional[str] = None
+    existing_channel: Optional[int] = None
     existing_charm: Optional[int] = None
     existing_terminal: Optional[str] = None
     custom_fields: Optional[Dict[str, Any]] = None
@@ -115,7 +135,7 @@ class AllocationRunRequest(BaseModel):
 
 class AssignmentModel(BaseModel):
     id: Optional[int] = None
-    signal_id: int
+    signal_id: Optional[int] = None
     tag: str
     description: str = ""
     signal_type: str
@@ -123,12 +143,20 @@ class AssignmentModel(BaseModel):
     pair_number: Optional[int] = None
     redundancy: str = ""
     logical_group: str = ""
+    system_cabinet: Optional[str] = None
+    controller: Optional[str] = None
     cabinet_id: Optional[str] = None
     cioc_id: Optional[str] = None
     baseplate_id: Optional[str] = None
+    channel_no: Optional[int] = None
     charm_index: Optional[int] = None  # 1..12
-    terminal_block: Optional[str] = None
+    charm_no: Optional[int] = None      # 1..96 per CIOC
+    charm_part_no: Optional[str] = None
     charm_type: Optional[str] = None
+    charm_tb_part_no: Optional[str] = None
+    terminal_block: Optional[str] = None
+    charm_tb_terminals: Optional[str] = None
+    tag_status: str = "Field"
     status: str = "Pending"  # Allocated, Pending, Needs Review, Blocked, Spare
     reason: Optional[str] = None
     is_manual_override: bool = False

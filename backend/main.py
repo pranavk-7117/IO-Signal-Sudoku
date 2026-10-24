@@ -24,6 +24,7 @@ from engine.validator import ValidationEngine
 from engine.tq_generator import TQGenerator
 from engine.utilisation import UtilisationCalculator
 from engine.excel_handler import ExcelHandler, REPORT_OUTPUT_DIR
+from engine.mapping_engine import MappingEngine
 from engine.revision_comparator import RevisionComparator
 from demo_data import seed_demo_project, SAMPLE_DIR
 
@@ -55,10 +56,7 @@ app.add_middleware(
 @app.on_event("startup")
 def startup_event():
     init_db()
-    # Seed demo project if DB empty
-    projects = DBService.list_projects()
-    if not projects:
-        seed_demo_project()
+    # Clean zero-preload startup: wait for user uploads during testing
 
 @app.get("/api/health")
 def health_check():
@@ -135,10 +133,12 @@ def switch_active_revision(project_id: int, revision_id: int = Query(...)):
 # --- Excel Upload & Column Mapping ---
 @app.post("/api/upload/inspect")
 async def inspect_uploaded_file(file: UploadFile = File(...)):
-    if not file.filename.endswith(('.xlsx', '.xls')):
-        raise HTTPException(status_code=400, detail="Only Excel files (.xlsx, .xls) are supported.")
+    if not file.filename.lower().endswith(('.xlsx', '.xls', '.csv')):
+        raise HTTPException(status_code=400, detail="Only Excel (.xlsx, .xls) and CSV (.csv) files are supported.")
     
-    saved_path = os.path.join(UPLOAD_DIR, file.filename)
+    # Secure storage ID preventing directory traversal (Fixes D15)
+    token, safe_filename = MappingEngine.generate_storage_id(file.filename)
+    saved_path = os.path.join(UPLOAD_DIR, safe_filename)
     with open(saved_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
     
@@ -147,7 +147,8 @@ async def inspect_uploaded_file(file: UploadFile = File(...)):
     try:
         inspection = ExcelHandler.inspect_workbook(saved_path)
         return {
-            "filename": file.filename,
+            "storage_id": token,
+            "filename": MappingEngine.sanitize_filename(file.filename),
             "file_size_kb": file_size_kb,
             "sheets": inspection["sheets"],
             "sheet_headers": inspection["headers"],
@@ -156,7 +157,39 @@ async def inspect_uploaded_file(file: UploadFile = File(...)):
             "temp_file_path": saved_path
         }
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to inspect Excel workbook: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to inspect dataset: {str(e)}")
+
+@app.post("/api/upload/multi-inspect")
+async def inspect_multiple_files(files: List[UploadFile] = File(...)):
+    """Accepts multiple customer IO files in one batch (Fixes D13)."""
+    results = []
+    for f in files:
+        if not f.filename.lower().endswith(('.xlsx', '.xls', '.csv')):
+            continue
+        token, safe_filename = MappingEngine.generate_storage_id(f.filename)
+        saved_path = os.path.join(UPLOAD_DIR, safe_filename)
+        with open(saved_path, "wb") as buffer:
+            shutil.copyfileobj(f.file, buffer)
+        
+        size_kb = round(os.path.getsize(saved_path) / 1024.0, 1)
+        try:
+            insp = ExcelHandler.inspect_workbook(saved_path)
+            results.append({
+                "storage_id": token,
+                "filename": MappingEngine.sanitize_filename(f.filename),
+                "file_size_kb": size_kb,
+                "sheets": insp["sheets"],
+                "sheet_headers": insp["headers"],
+                "sheet_data_preview": insp["previews"],
+                "suggested_mappings": insp["suggested_mappings"],
+                "temp_file_path": saved_path
+            })
+        except Exception as e:
+            results.append({
+                "filename": f.filename,
+                "error": str(e)
+            })
+    return {"files_inspected": results, "total_files": len(results)}
 
 @app.post("/api/upload/import")
 def import_mapped_data(
@@ -166,7 +199,13 @@ def import_mapped_data(
     sheet_name: str = Query(...),
     mapping: Dict[str, str] = ...
 ):
-    if not os.path.exists(file_path):
+    # Enforce path traversal security (Fixes D15)
+    resolved_path = os.path.abspath(file_path)
+    allowed_dirs = [os.path.abspath(UPLOAD_DIR), "/tmp"]
+    if not any(resolved_path.startswith(ad) for ad in allowed_dirs):
+        raise HTTPException(status_code=403, detail="Access denied: invalid file path location")
+
+    if not os.path.exists(resolved_path):
         raise HTTPException(status_code=404, detail="Uploaded file not found on server")
 
     try:

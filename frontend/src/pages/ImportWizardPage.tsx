@@ -63,8 +63,9 @@ export const ImportWizardPage: React.FC = () => {
     }
 
     if (!file) return;
-    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
-      setErrorMsg('Please upload a valid Excel spreadsheet (.xlsx or .xls)');
+    const lowerName = file.name.toLowerCase();
+    if (!lowerName.endsWith('.xlsx') && !lowerName.endsWith('.xls') && !lowerName.endsWith('.csv')) {
+      setErrorMsg('Please upload a valid Excel spreadsheet (.xlsx, .xls) or CSV dataset (.csv)');
       return;
     }
 
@@ -217,7 +218,7 @@ export const ImportWizardPage: React.FC = () => {
       {/* Step Indicators */}
       <div className="grid grid-cols-4 gap-3">
         {[
-          { num: 1, label: 'Upload Workbooks', desc: 'Accept .xlsx / .xls' },
+          { num: 1, label: 'Upload Dataset', desc: 'Accept .xlsx / .xls / .csv' },
           { num: 2, label: 'Sheet & Column Mapping', desc: 'Schema Alignment' },
           { num: 3, label: 'Pre-Validation Preview', desc: 'Verify Signal Integrity' },
           { num: 4, label: 'Import Confirmation', desc: 'Ready for Allocation' },
@@ -273,16 +274,16 @@ export const ImportWizardPage: React.FC = () => {
             <div className="w-14 h-14 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mb-3">
               <Upload className="w-7 h-7" />
             </div>
-            <h3 className="font-bold text-slate-900 text-sm">Drag and drop customer IO Excel workbook here</h3>
+            <h3 className="font-bold text-slate-900 text-sm">Drag and drop customer IO Excel workbook or CSV here</h3>
             <p className="text-xs text-slate-500 mt-1 max-w-sm">
-              Supports .xlsx and .xls formats. The parser inspects sheets, detects headers, and handles custom column structures automatically.
+              Supports .xlsx, .xls, and .csv formats. The parser inspects sheets, detects headers, and handles 76-column custom schemas automatically.
             </p>
 
             <label className="mt-5 inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-md shadow-xs cursor-pointer transition-colors">
               <span>Select File from Computer</span>
               <input
                 type="file"
-                accept=".xlsx, .xls"
+                accept=".xlsx, .xls, .csv"
                 onChange={handleFileUpload}
                 className="hidden"
               />
