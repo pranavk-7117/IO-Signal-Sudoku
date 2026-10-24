@@ -17,7 +17,8 @@ from models import (
     TQCreateModel, TQUpdateModel, TQResponseModel,
     RevisionComparisonResponse, UtilisationSummaryModel,
     AuditLogModel, SheetInspectResponse, ColumnMappingRequest,
-    ApprovalRequest, ApprovalResponse, AllocationRunResult, SolverDiagnostics
+    ApprovalRequest, ApprovalResponse, AllocationRunResult, SolverDiagnostics,
+    RiskAssessmentResponse, ApplySuggestionRequest, ChatRequest, ChatResponse
 )
 from db_service import DBService
 from engine.allocator import AllocationEngine
@@ -28,6 +29,8 @@ from engine.excel_handler import ExcelHandler, REPORT_OUTPUT_DIR
 from engine.mapping_engine import MappingEngine
 from engine.revision_comparator import RevisionComparator
 from engine.explainability import ExplainabilityEngine
+from engine.risk_engine import RiskEngine
+from engine.chatbot import ChatbotService
 from demo_data import seed_demo_project, SAMPLE_DIR
 
 if os.environ.get("VERCEL"):
@@ -666,6 +669,97 @@ def download_sample_file(file_name: str):
         create_sample_excel_files()
 
     return FileResponse(file_path, filename=file_name, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+# --- Engineering Risk Assessment & Rule Suggestions ---
+@app.get("/api/projects/{project_id}/risk-assessment", response_model=RiskAssessmentResponse)
+def get_project_risk_assessment(project_id: int, revision_id: Optional[int] = None):
+    if not revision_id:
+        revs = DBService.get_revisions(project_id)
+        active_rev = next((r for r in revs if r["is_active"]), revs[0] if revs else None)
+        if not active_rev:
+            raise HTTPException(status_code=404, detail="No revision found")
+        revision_id = active_rev["id"]
+
+    hw_config = DBService.get_hardware_config(project_id, revision_id)
+    signals = DBService.get_imported_signals(project_id, revision_id)
+    assignments = DBService.get_assignments(project_id, revision_id)
+
+    return RiskEngine.evaluate_project_risk(hw_config, signals, assignments)
+
+@app.post("/api/projects/{project_id}/apply-rule-suggestion")
+def apply_rule_suggestion(project_id: int, req: ApplySuggestionRequest, revision_id: Optional[int] = None):
+    if not revision_id:
+        revs = DBService.get_revisions(project_id)
+        active_rev = next((r for r in revs if r["is_active"]), revs[0] if revs else None)
+        if not active_rev:
+            raise HTTPException(status_code=404, detail="No revision found")
+        revision_id = active_rev["id"]
+
+    hw_config = DBService.get_hardware_config(project_id, revision_id)
+    target = req.rule_target
+    val = req.suggested_value
+
+    if target == "enforce_ab_redundancy_separation":
+        hw_config.rules.enforce_ab_redundancy_separation = bool(val)
+    elif target == "spare_percentage":
+        hw_config.spare_percentage = float(val)
+        hw_config.rules.spare_percentage = float(val)
+    elif target == "enforce_cable_grouping":
+        hw_config.rules.enforce_cable_grouping = bool(val)
+        hw_config.rules.enforce_pair_order = bool(val)
+    elif target == "custom_rule_sov_isolated":
+        if isinstance(val, dict):
+            rule_id = f"RULE-SOV-{int(datetime.utcnow().timestamp())}"
+            val["id"] = rule_id
+            hw_config.custom_rules.append(val)
+    elif hasattr(hw_config.rules, target):
+        setattr(hw_config.rules, target, val)
+
+    DBService.save_hardware_config(project_id, revision_id, hw_config)
+    DBService.add_audit_log(
+        project_id,
+        "APPLY_RULE_SUGGESTION",
+        "RuleConfig",
+        req.suggestion_id,
+        None,
+        f"Applied suggestion: {target} = {val}",
+        "Lead DCS Engineer"
+    )
+    return {"message": "Rule suggestion applied successfully", "rule_target": target, "new_value": val}
+
+# --- DCS Engineering AI Chatbot ---
+@app.post("/api/chat", response_model=ChatResponse)
+def handle_chat_query(req: ChatRequest):
+    proj_meta = None
+    hw_config = None
+    risk_info = None
+    val_summary = None
+
+    if req.project_id:
+        proj_meta = DBService.get_project(req.project_id)
+        rev_id = req.revision_id
+        if not rev_id:
+            revs = DBService.get_revisions(req.project_id)
+            active_rev = next((r for r in revs if r["is_active"]), revs[0] if revs else None)
+            if active_rev:
+                rev_id = active_rev["id"]
+
+        if rev_id:
+            hw_config = DBService.get_hardware_config(req.project_id, rev_id)
+            signals = DBService.get_imported_signals(req.project_id, rev_id)
+            assignments = DBService.get_assignments(req.project_id, rev_id)
+            risk_info = RiskEngine.evaluate_project_risk(hw_config, signals, assignments)
+            val_summary_obj = DBService.get_validation_results(req.project_id, rev_id)
+            if val_summary_obj:
+                val_summary = val_summary_obj.model_dump()
+
+    return ChatbotService.answer_query(
+        request=req,
+        project_meta=proj_meta,
+        hw_config=hw_config,
+        risk_info=risk_info,
+        validation_summary=val_summary
+    )
 
 # --- Audit Logs & Demo Seed ---
 @app.get("/api/audit-logs/{project_id}", response_model=List[AuditLogModel])

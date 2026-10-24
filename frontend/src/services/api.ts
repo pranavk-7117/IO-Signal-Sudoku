@@ -1,7 +1,8 @@
 import {
   Project, Revision, HardwareConfig, ProjectRule, Assignment,
   ValidationSummary, TechnicalQuery, UtilisationSummary,
-  RevisionComparison, AuditLog
+  RevisionComparison, AuditLog,
+  RiskAssessmentResponse, ChatRequest, ChatResponse
 } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
@@ -343,6 +344,46 @@ export const api = {
   seedDemo: async () => {
     const res = await fetch(`${API_BASE}/demo/seed`, { method: 'POST' });
     if (!res.ok) throw new Error('Failed to seed demo');
+    return res.json();
+  },
+
+  // Risk Assessment & Rule Recommendations
+  getRiskAssessment: async (projectId: number, revisionId?: number): Promise<RiskAssessmentResponse> => {
+    const url = revisionId
+      ? `${API_BASE}/projects/${projectId}/risk-assessment?revision_id=${revisionId}`
+      : `${API_BASE}/projects/${projectId}/risk-assessment`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Failed to fetch risk assessment');
+    return res.json();
+  },
+
+  applyRuleSuggestion: async (projectId: number, data: { suggestion_id: string; rule_target: string; suggested_value: any }, revisionId?: number) => {
+    const url = revisionId
+      ? `${API_BASE}/projects/${projectId}/apply-rule-suggestion?revision_id=${revisionId}`
+      : `${API_BASE}/projects/${projectId}/apply-rule-suggestion`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Failed to apply rule suggestion');
+    }
+    return res.json();
+  },
+
+  // DCS Engineering AI Chatbot
+  sendChatMessage: async (req: ChatRequest): Promise<ChatResponse> => {
+    const res = await fetch(`${API_BASE}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req)
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Failed to communicate with AI Assistant');
+    }
     return res.json();
   }
 };

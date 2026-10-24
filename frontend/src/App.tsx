@@ -14,6 +14,7 @@ import { UtilisationPage } from './pages/UtilisationPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { RevisionManagerPage } from './pages/RevisionManagerPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { DCSChatbot } from './components/DCSChatbot';
 
 export const App: React.FC = () => {
   return (
@@ -46,6 +47,9 @@ export const App: React.FC = () => {
             </main>
           </div>
         </div>
+
+        {/* Global Floating DeltaV Engineering AI Assistant Chatbot */}
+        <DCSChatbot />
       </BrowserRouter>
     </ProjectProvider>
   );

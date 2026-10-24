@@ -21,6 +21,7 @@ import {
 import { useProject } from '../context/ProjectContext';
 import { api } from '../services/api';
 import { HardwareConfig, ProjectRule } from '../types';
+import { RiskSuggestionBanner } from '../components/RiskSuggestionBanner';
 
 const CHARM_PRESETS = [
   { name: 'AI 4-20 MA HART CHARM', part: 'SE4303T01', defaultTB: 'Standard CHARM Terminal Block', tbPart: 'SE4501', pins: '1, 2' },
@@ -311,6 +312,9 @@ export const RulesHardwarePage: React.FC = () => {
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-12">
+      {/* Risk Assessment & Rule Recommendations */}
+      <RiskSuggestionBanner onRuleApplied={loadData} />
+
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>

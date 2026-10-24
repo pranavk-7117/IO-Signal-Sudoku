@@ -241,3 +241,61 @@ export interface AuditLog {
   user_name: string;
   created_at: string;
 }
+
+
+export interface RiskFactor {
+  id: string;
+  category: 'segregation' | 'electrical' | 'spares' | 'cables' | 'density';
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  score: number;
+  title: string;
+  description: string;
+  affected_items: string[];
+}
+
+export interface RuleSuggestion {
+  id: string;
+  title: string;
+  category: string;
+  risk_reduction_pts: number;
+  description: string;
+  rule_target: string;
+  suggested_value: any;
+  can_auto_apply: boolean;
+  applied?: boolean;
+}
+
+export interface RiskAssessmentResponse {
+  overall_score: number;
+  risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  risk_color: 'emerald' | 'amber' | 'rose' | 'purple';
+  summary: string;
+  factors: RiskFactor[];
+  suggestions: RuleSuggestion[];
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp?: string;
+}
+
+export interface ChatRequest {
+  project_id?: number;
+  revision_id?: number;
+  messages: ChatMessage[];
+  context_page?: string;
+  selected_tag?: string;
+}
+
+export interface ChatResponse {
+  message: ChatMessage;
+  suggested_actions?: Array<{
+    id: string;
+    title: string;
+    rule_target: string;
+    suggested_value: any;
+    risk_reduction_pts?: number;
+  }>;
+  model_used?: string;
+}

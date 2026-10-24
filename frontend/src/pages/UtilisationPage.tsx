@@ -3,18 +3,16 @@ import {
   Layers,
   Cpu,
   Download,
-  CheckCircle2,
-  AlertTriangle,
   Server,
   Zap,
-  Activity,
-  Maximize2
+  Activity
 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { api } from '../services/api';
-import { UtilisationSummary, CabinetUtilisation, CIOCUtilisation, BaseplateUtilisation } from '../types';
+import { UtilisationSummary } from '../types';
 import { MetricCard } from '../components/ui/MetricCard';
 import { ExplainabilityDrawer } from '../components/ExplainabilityDrawer';
+import { RiskSuggestionBanner } from '../components/RiskSuggestionBanner';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
@@ -23,8 +21,8 @@ export const UtilisationPage: React.FC = () => {
   const { currentProject, currentRevision } = useProject();
 
   const [summary, setSummary] = useState<UtilisationSummary | null>(null);
-  const [selectedCabinet, setSelectedCabinet] = useState<string>('CAB-01');
-  const [selectedCIOC, setSelectedCIOC] = useState<string>('CIOC-01');
+  const [selectedCabinet, setSelectedCabinet] = useState<string>('');
+  const [selectedCIOC, setSelectedCIOC] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [explainingTag, setExplainingTag] = useState<string | null>(null);
 
@@ -41,9 +39,10 @@ export const UtilisationPage: React.FC = () => {
       const data = await api.getUtilisationSummary(currentProject.id, currentRevision.id);
       setSummary(data);
       if (data.cabinets.length > 0) {
-        setSelectedCabinet(data.cabinets[0].cabinet_id);
-        if (data.cabinets[0].ciocs.length > 0) {
-          setSelectedCIOC(data.cabinets[0].ciocs[0].cioc_id);
+        const firstCab = data.cabinets[0];
+        setSelectedCabinet((prev) => (data.cabinets.some((c) => c.cabinet_id === prev) ? prev : firstCab.cabinet_id));
+        if (firstCab.ciocs.length > 0) {
+          setSelectedCIOC((prev) => (firstCab.ciocs.some((ci) => ci.cioc_id === prev) ? prev : firstCab.ciocs[0].cioc_id));
         }
       }
     } catch (err) {
@@ -95,6 +94,9 @@ export const UtilisationPage: React.FC = () => {
         </a>
       </div>
 
+      {/* Industrial DCS Risk Assessment & Actionable Rule Suggestions */}
+      <RiskSuggestionBanner onRuleApplied={loadUtilisation} />
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
@@ -131,7 +133,7 @@ export const UtilisationPage: React.FC = () => {
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="font-bold text-slate-900 text-sm">CHARM Slot Breakdown by CIOC ({selectedCabinet})</h3>
+            <h3 className="font-bold text-slate-900 text-sm">CHARM Slot Breakdown by CIOC ({cab?.cabinet_id})</h3>
             <p className="text-xs text-slate-500">Allocated Signals vs Reserved Spares vs Available Free Slots</p>
           </div>
           <div className="flex items-center space-x-4 text-xs font-medium">
@@ -154,7 +156,7 @@ export const UtilisationPage: React.FC = () => {
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={ciocChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-              <XAxis dataKey="name" stroke="#64748B" fontSize={12} tickLine={false} />
+              <XAxis dataKey="name" stroke="#64748B" fontSize={11} tickLine={false} />
               <YAxis stroke="#64748B" fontSize={12} tickLine={false} />
               <Tooltip
                 cursor={{ fill: '#F1F5F9' }}
@@ -177,15 +179,22 @@ export const UtilisationPage: React.FC = () => {
               <span>Interactive DeltaV CHARM Carrier Rack Visualizer</span>
             </h3>
             <p className="text-xs text-slate-500">
-              Cabinet → CIOC → Baseplate (12 CHARMs per Baseplate). Hover over any position to inspect allocated instrument tag.
+              Cabinet → CIOC → Baseplate (12 CHARMs per Baseplate). Click any position to view placement explainability and engineering rules.
             </p>
           </div>
 
           {/* Cabinet & CIOC Selectors */}
           <div className="flex items-center space-x-2">
             <select
-              value={selectedCabinet}
-              onChange={(e) => setSelectedCabinet(e.target.value)}
+              value={cab?.cabinet_id || selectedCabinet}
+              onChange={(e) => {
+                const newCabId = e.target.value;
+                setSelectedCabinet(newCabId);
+                const targetCab = summary.cabinets.find((c) => c.cabinet_id === newCabId);
+                if (targetCab && targetCab.ciocs.length > 0) {
+                  setSelectedCIOC(targetCab.ciocs[0].cioc_id);
+                }
+              }}
               className="text-xs font-semibold px-3 py-1.5 border border-slate-300 rounded-md bg-white focus:outline-hidden"
             >
               {summary.cabinets.map((c) => (
@@ -197,7 +206,7 @@ export const UtilisationPage: React.FC = () => {
 
             {cab && (
               <select
-                value={selectedCIOC}
+                value={cioc?.cioc_id || selectedCIOC}
                 onChange={(e) => setSelectedCIOC(e.target.value)}
                 className="text-xs font-semibold px-3 py-1.5 border border-slate-300 rounded-md bg-white focus:outline-hidden"
               >
@@ -259,14 +268,14 @@ export const UtilisationPage: React.FC = () => {
               <div className="grid grid-cols-6 sm:grid-cols-12 gap-1 bg-white p-2.5 rounded-lg border border-slate-200">
                 {bp.slots.map((slot) => {
                   let slotBg = 'bg-slate-100 hover:bg-slate-200 text-slate-400 border-slate-200';
-                  let sigType = slot.signal_type || '';
+                  let sigType = (slot.signal_type || '').toUpperCase();
 
                   if (slot.is_allocated) {
-                    if (sigType === 'AI') slotBg = 'bg-blue-600 text-white';
-                    else if (sigType === 'AO') slotBg = 'bg-cyan-600 text-white';
-                    else if (sigType === 'DI') slotBg = 'bg-emerald-600 text-white';
-                    else if (sigType === 'DO') slotBg = 'bg-indigo-600 text-white';
-                    else if (sigType === 'DO-SOV') slotBg = 'bg-rose-600 text-white';
+                    if (sigType.startsWith('AI')) slotBg = 'bg-blue-600 text-white';
+                    else if (sigType.startsWith('AO')) slotBg = 'bg-cyan-600 text-white';
+                    else if (sigType.startsWith('DI')) slotBg = 'bg-emerald-600 text-white';
+                    else if (sigType.includes('SOV') || sigType.includes('SOLENOID')) slotBg = 'bg-rose-600 text-white';
+                    else if (sigType.startsWith('DO')) slotBg = 'bg-indigo-600 text-white';
                     else slotBg = 'bg-slate-800 text-white';
                   } else if (slot.is_spare) {
                     slotBg = 'bg-amber-100 border border-amber-300 text-amber-800';
@@ -278,7 +287,7 @@ export const UtilisationPage: React.FC = () => {
                       onClick={() => slot.signal_tag && setExplainingTag(slot.signal_tag)}
                       title={
                         slot.is_allocated
-                          ? `CH${slot.charm_index}: ${slot.signal_tag} (${slot.signal_type})\n${slot.charm_type || ''}\n${slot.terminal_block || ''}`
+                          ? `CH${slot.charm_index}: ${slot.signal_tag} (${slot.signal_type})\n${slot.charm_type || ''}\n${slot.terminal_block || ''}\nClick to view rule explainability`
                           : slot.is_spare
                           ? `CH${slot.charm_index}: Reserved Spare Capacity`
                           : `CH${slot.charm_index}: Unassigned Free Position`
@@ -302,6 +311,7 @@ export const UtilisationPage: React.FC = () => {
           ))}
         </div>
       </div>
+
       {/* Explainability Drawer */}
       {explainingTag && currentProject && currentRevision && (
         <ExplainabilityDrawer

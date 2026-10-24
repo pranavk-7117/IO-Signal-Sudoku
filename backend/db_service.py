@@ -950,3 +950,26 @@ class DBService:
             ))
         conn.close()
         return logs
+
+
+    @staticmethod
+    def add_audit_log(
+        project_id: int,
+        action: str,
+        entity_type: str,
+        entity_id: str,
+        old_value: Optional[str] = None,
+        new_value: Optional[str] = None,
+        user_name: str = "Lead DCS Engineer"
+    ):
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO audit_logs (project_id, action, entity_type, entity_id, old_value, new_value, user_name, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (project_id, action, entity_type, str(entity_id), old_value, new_value, user_name, datetime.utcnow().isoformat())
+        )
+        conn.commit()
+        conn.close()

@@ -1,10 +1,24 @@
 import math
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from models import (
     HardwareConfigModel, AssignmentModel,
     UtilisationSummaryModel, CabinetUtilisationModel, CIOCUtilisationModel,
     BaseplateUtilisationModel, CharmSlotModel
 )
+
+def extract_bp_num(bp_id: Optional[str]) -> int:
+    if not bp_id:
+        return 1
+    if "-CBP-" in bp_id:
+        try:
+            return int(bp_id.split("-CBP-")[-1])
+        except ValueError:
+            pass
+    import re
+    m = re.search(r'(\d+)$', str(bp_id).strip())
+    if m:
+        return int(m.group(1))
+    return 1
 
 class UtilisationCalculator:
     @staticmethod
@@ -12,56 +26,136 @@ class UtilisationCalculator:
         config: HardwareConfigModel,
         assignments: List[AssignmentModel]
     ) -> UtilisationSummaryModel:
-        total_cabs = config.cabinets_count
-        ciocs_per_cab = config.ciocs_per_cabinet
-        bps_per_cioc = config.baseplates_per_cioc
-        charms_per_bp = config.charms_per_baseplate
+        total_cabs = max(1, config.cabinets_count)
+        ciocs_per_cab = max(1, config.ciocs_per_cabinet or 4)
+        bps_per_cioc = max(1, config.baseplates_per_cioc or 8)
+        charms_per_bp = max(1, config.charms_per_baseplate or 12)
         spare_pct = config.spare_percentage
 
         spare_slots_per_bp = max(1, int(math.ceil(charms_per_bp * (spare_pct / 100.0)))) if spare_pct > 0 else 0
         spare_threshold = charms_per_bp - spare_slots_per_bp
 
-        # Independent tracking of allocated slot assignments without overwrite
+        # 1. Discover actual cabinets present in assignments or use configured defaults
+        cabs_in_assignments: List[str] = []
+        for a in assignments:
+            c = a.cabinet_id or a.system_cabinet
+            if c and c not in cabs_in_assignments and c != "-":
+                cabs_in_assignments.append(c)
+
+        if not cabs_in_assignments:
+            ordered_cabinets = [f"CAB-{c:02d}" for c in range(1, total_cabs + 1)]
+        else:
+            ordered_cabinets = list(cabs_in_assignments)
+            if len(ordered_cabinets) < total_cabs:
+                for c in range(len(ordered_cabinets) + 1, total_cabs + 1):
+                    ordered_cabinets.append(f"CAB-{c:02d}")
+
+        # 2. Build multi-key allocation map for flexible, fail-safe slot lookup
         alloc_map: Dict[str, AssignmentModel] = {}
         allocated_count = 0
         unallocated_count = 0
 
         for a in assignments:
-            if a.status == "Allocated" and a.cabinet_id and a.cioc_id and a.baseplate_id and a.charm_index:
-                addr = f"{a.cabinet_id}/{a.cioc_id}/{a.baseplate_id}/{a.charm_index}"
-                alloc_map[addr] = a
+            if a.status == "Allocated" and (a.baseplate_id or a.charm_index):
+                bp_num = extract_bp_num(a.baseplate_id)
+                ch = a.charm_index or a.channel_no or 1
                 allocated_count += 1
+
+                cab_keys = [a.cabinet_id, a.system_cabinet]
+                cab_val = a.cabinet_id or a.system_cabinet
+                if cab_val in ordered_cabinets:
+                    c_idx = ordered_cabinets.index(cab_val) + 1
+                    cab_keys.append(f"CAB-{c_idx:02d}")
+
+                cioc_keys = [a.cioc_id]
+                import re
+                if a.cioc_id:
+                    cioc_m = re.search(r'(\d+)$', a.cioc_id)
+                    if cioc_m:
+                        cioc_num = int(cioc_m.group(1))
+                        cioc_keys.append(f"CIOC-{cioc_num:02d}")
+
+                bp_keys = [a.baseplate_id, f"BP-{bp_num:02d}", str(bp_num)]
+
+                for ck in set(cab_keys):
+                    if not ck:
+                        continue
+                    for cik in set(cioc_keys):
+                        if not cik:
+                            continue
+                        for bpk in set(bp_keys):
+                            if not bpk:
+                                continue
+                            alloc_map[f"{ck}/{cik}/{bpk}/{ch}"] = a
             else:
                 unallocated_count += 1
 
+        # 3. Build hierarchical utilization structure
         cabinets_list: List[CabinetUtilisationModel] = []
         used_cabs = 0
         used_ciocs_total = 0
         used_bps_total = 0
-        total_charm_positions = total_cabs * ciocs_per_cab * bps_per_cioc * charms_per_bp
-        reserved_spare_positions = total_cabs * ciocs_per_cab * bps_per_cioc * spare_slots_per_bp
 
-        for c in range(1, total_cabs + 1):
-            cab_id = f"CAB-{c:02d}"
+        actual_total_cabs = len(ordered_cabinets)
+        total_charm_positions = actual_total_cabs * ciocs_per_cab * bps_per_cioc * charms_per_bp
+        reserved_spare_positions = actual_total_cabs * ciocs_per_cab * bps_per_cioc * spare_slots_per_bp
+
+        for c_idx, cab_id in enumerate(ordered_cabinets, start=1):
             cab_used_slots = 0
             cab_used_ciocs = 0
             ciocs_list: List[CIOCUtilisationModel] = []
 
-            for ci in range(1, ciocs_per_cab + 1):
-                cioc_id = f"CIOC-{ci:02d}"
+            # Discover CIOCs belonging to this cabinet
+            cab_ciocs: List[str] = []
+            for a in assignments:
+                if (a.cabinet_id == cab_id or a.system_cabinet == cab_id) and a.cioc_id:
+                    if a.cioc_id not in cab_ciocs:
+                        cab_ciocs.append(a.cioc_id)
+
+            # If DeltaV naming pattern detected or insufficient CIOCs discovered, complete to ciocs_per_cab
+            if not cab_ciocs:
+                cab_ciocs = [f"CIOC-{(c_idx - 1) * ciocs_per_cab + ci:02d}" for ci in range(1, ciocs_per_cab + 1)]
+            elif len(cab_ciocs) < ciocs_per_cab:
+                start_seq = len(cab_ciocs) + 1
+                for ci in range(start_seq, ciocs_per_cab + 1):
+                    cab_ciocs.append(f"CIOC-{(c_idx - 1) * ciocs_per_cab + ci:02d}")
+
+            for ci_idx, cioc_id in enumerate(cab_ciocs, start=1):
                 cioc_used_slots = 0
                 cioc_used_bps = 0
                 bps_list: List[BaseplateUtilisationModel] = []
 
+                # Baseplate prefix determination (e.g. "001-CBP-" vs "BP-")
+                import re
+                seq_match = re.search(r'(\d+)$', cioc_id)
+                cioc_seq_num = (int(seq_match.group(1)) % 1000) if seq_match else ((c_idx - 1) * ciocs_per_cab + ci_idx)
+                is_official_format = ("-DCS-" in cab_id) or ("CIOC" in cioc_id and len(cioc_id) > 8)
+
                 for bp in range(1, bps_per_cioc + 1):
-                    bp_id = f"BP-{bp:02d}"
+                    if is_official_format:
+                        bp_id = f"{cioc_seq_num:03d}-CBP-{bp}"
+                    else:
+                        bp_id = f"BP-{bp:02d}"
+
                     bp_used_slots = 0
                     slots_list: List[CharmSlotModel] = []
 
                     for ch in range(1, charms_per_bp + 1):
                         is_spare = (ch > spare_threshold) and (spare_pct > 0)
-                        addr = f"{cab_id}/{cioc_id}/{bp_id}/{ch}"
-                        a = alloc_map.get(addr)
+                        
+                        # Lookup across aliases
+                        candidate_keys = [
+                            f"{cab_id}/{cioc_id}/{bp_id}/{ch}",
+                            f"{cab_id}/{cioc_id}/{bp}/{ch}",
+                            f"{cab_id}/{cioc_id}/BP-{bp:02d}/{ch}",
+                            f"CAB-{c_idx:02d}/{cioc_id}/{bp_id}/{ch}",
+                            f"CAB-{c_idx:02d}/CIOC-{ci_idx:02d}/BP-{bp:02d}/{ch}"
+                        ]
+                        a = None
+                        for k in candidate_keys:
+                            if k in alloc_map:
+                                a = alloc_map[k]
+                                break
 
                         if a:
                             bp_used_slots += 1
@@ -71,8 +165,8 @@ class UtilisationCalculator:
                                 is_spare=is_spare,
                                 signal_tag=a.tag,
                                 signal_type=a.signal_type,
-                                charm_type=a.charm_type,
-                                terminal_block=a.terminal_block
+                                charm_type=a.charm_type or a.charm_part_no,
+                                terminal_block=a.terminal_block or a.charm_tb_part_no
                             ))
                         else:
                             slots_list.append(CharmSlotModel(
@@ -149,11 +243,11 @@ class UtilisationCalculator:
         spare_achieved = round((reserved_spare_positions / max(1, total_charm_positions)) * 100.0, 1)
 
         return UtilisationSummaryModel(
-            total_cabinets=total_cabs,
+            total_cabinets=actual_total_cabs,
             used_cabinets=used_cabs,
-            total_ciocs=total_cabs * ciocs_per_cab,
+            total_ciocs=actual_total_cabs * ciocs_per_cab,
             used_ciocs=used_ciocs_total,
-            total_baseplates=total_cabs * ciocs_per_cab * bps_per_cioc,
+            total_baseplates=actual_total_cabs * ciocs_per_cab * bps_per_cioc,
             used_baseplates=used_bps_total,
             total_charm_positions=total_charm_positions,
             allocated_signals=allocated_count,

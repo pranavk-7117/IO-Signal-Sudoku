@@ -443,3 +443,56 @@ class ApprovalResponse(BaseModel):
     blocking_issues_count: int = 0
     blocking_reasons: List[str] = Field(default_factory=list)
     validator_summary: Optional[Dict[str, Any]] = None
+
+
+# --- Risk Assessment & Rule Recommendation Models ---
+class RiskFactorModel(BaseModel):
+    id: str
+    category: str  # segregation, electrical, spares, cables, density
+    severity: str  # LOW, MEDIUM, HIGH, CRITICAL
+    score: int
+    title: str
+    description: str
+    affected_items: List[str] = Field(default_factory=list)
+
+class RuleSuggestionModel(BaseModel):
+    id: str
+    title: str
+    category: str
+    risk_reduction_pts: int
+    description: str
+    rule_target: str
+    suggested_value: Any
+    can_auto_apply: bool = True
+    applied: bool = False
+
+class RiskAssessmentResponse(BaseModel):
+    overall_score: int  # 0 to 100
+    risk_level: str     # LOW, MEDIUM, HIGH, CRITICAL
+    risk_color: str     # emerald, amber, rose, purple
+    summary: str
+    factors: List[RiskFactorModel] = Field(default_factory=list)
+    suggestions: List[RuleSuggestionModel] = Field(default_factory=list)
+
+class ApplySuggestionRequest(BaseModel):
+    suggestion_id: str
+    rule_target: str
+    suggested_value: Any
+
+# --- Chatbot / LLM Assistant Models ---
+class ChatMessage(BaseModel):
+    role: str  # user, assistant, system
+    content: str
+    timestamp: Optional[str] = None
+
+class ChatRequest(BaseModel):
+    project_id: Optional[int] = None
+    revision_id: Optional[int] = None
+    messages: List[ChatMessage]
+    context_page: Optional[str] = "general"
+    selected_tag: Optional[str] = None
+
+class ChatResponse(BaseModel):
+    message: ChatMessage
+    suggested_actions: Optional[List[Dict[str, Any]]] = None
+    model_used: Optional[str] = "groq-qwen-27b"
