@@ -309,12 +309,17 @@ class DBService:
             cursor.execute("""
                 INSERT INTO imported_signals (
                     project_id, revision_id, row_index, tag, description, signal_type,
+                    signal_level, electrical_spec, instrument_type, external_power, loop_name, operating_area, technical_room, tag_status,
                     cable_id, pair_number, redundancy, logical_group, segregation, service_id,
                     existing_cabinet, existing_cioc, existing_baseplate, existing_charm, existing_terminal,
                     custom_fields_json, is_valid, validation_errors_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """, (
                 project_id, revision_id, idx, sig.tag, sig.description or "", sig.signal_type.upper(),
+                getattr(sig, "signal_level", "") or "", getattr(sig, "electrical_spec", "") or "",
+                getattr(sig, "instrument_type", "") or "", getattr(sig, "external_power", "") or "",
+                getattr(sig, "loop_name", "") or "", getattr(sig, "operating_area", "") or "",
+                getattr(sig, "technical_room", "") or "", getattr(sig, "tag_status", "Field") or "Field",
                 sig.cable_id or "", sig.pair_number, sig.redundancy or "", sig.logical_group or "",
                 sig.segregation or "", sig.service_id or "", sig.existing_cabinet, sig.existing_cioc,
                 sig.existing_baseplate, sig.existing_charm, sig.existing_terminal,
@@ -340,11 +345,20 @@ class DBService:
         rows = cursor.fetchall()
         signals = []
         for r in rows:
+            keys = r.keys() if hasattr(r, "keys") else []
             signals.append(SignalRecord(
                 id=r["id"],
                 tag=r["tag"],
                 description=r["description"] or "",
                 signal_type=r["signal_type"],
+                signal_level=r["signal_level"] if "signal_level" in keys else "",
+                electrical_spec=r["electrical_spec"] if "electrical_spec" in keys else "",
+                instrument_type=r["instrument_type"] if "instrument_type" in keys else "",
+                external_power=r["external_power"] if "external_power" in keys else "",
+                loop_name=r["loop_name"] if "loop_name" in keys else "",
+                operating_area=r["operating_area"] if "operating_area" in keys else "",
+                technical_room=r["technical_room"] if "technical_room" in keys else "",
+                tag_status=r["tag_status"] if "tag_status" in keys else "Field",
                 cable_id=r["cable_id"] or "",
                 pair_number=r["pair_number"],
                 redundancy=r["redundancy"] or "",

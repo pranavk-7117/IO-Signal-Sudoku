@@ -24,65 +24,75 @@ class ExcelHandler:
     @staticmethod
     def inspect_workbook(file_path: str) -> Dict[str, Any]:
         """
-        Reads workbook sheets, headers, sample rows and computes fuzzy column mappings.
+        Reads workbook sheets (Excel or CSV), headers, sample rows and computes fuzzy column mappings.
         """
-        wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
-        sheet_names = wb.sheetnames
-        
+        is_csv = file_path.lower().endswith('.csv')
         previews = {}
         headers_map = {}
         suggested_map = {}
+        sheet_names = []
 
-        for sheet in sheet_names:
-            ws = wb[sheet]
-            rows = list(ws.iter_rows(values_only=True))
-            if not rows:
-                continue
-
-            # First non-empty row as header
-            header_row = None
-            header_row_idx = 0
-            for idx, r in enumerate(rows[:10]):
-                non_empty = [c for c in r if c is not None and str(c).strip()]
-                if len(non_empty) >= 2:
-                    header_row = [str(c).strip() if c is not None else f"COL_{i+1}" for i, c in enumerate(r)]
-                    header_row_idx = idx
+        if is_csv:
+            sheet_names = ["Master_IO_Database"]
+            df = None
+            for enc in ['utf-8', 'latin1', 'cp1252', 'utf-8-sig']:
+                try:
+                    df = pd.read_csv(file_path, encoding=enc, nrows=20)
                     break
+                except Exception:
+                    continue
+            
+            if df is None:
+                raise ValueError("Could not parse CSV file with supported encodings (utf-8, latin1, cp1252).")
 
-            if not header_row:
-                continue
+            header_row = [str(c).strip() for c in df.columns]
+            headers_map["Master_IO_Database"] = header_row
 
-            headers_map[sheet] = header_row
-
-            # Read 5 preview rows
             preview_rows = []
-            for r in rows[header_row_idx + 1 : header_row_idx + 6]:
+            for _, r in df.head(10).iterrows():
                 row_dict = {}
-                for h, val in zip(header_row, r):
-                    row_dict[h] = str(val) if val is not None else ""
+                for h in header_row:
+                    val = r.get(h)
+                    row_dict[h] = "" if pd.isna(val) else str(val).strip()
                 preview_rows.append(row_dict)
+            previews["Master_IO_Database"] = preview_rows
+            ExcelHandler._compute_suggested_mappings(header_row, suggested_map)
+        else:
+            wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+            sheet_names = wb.sheetnames
 
-            previews[sheet] = preview_rows
+            for sheet in sheet_names:
+                ws = wb[sheet]
+                rows = list(ws.iter_rows(values_only=True))
+                if not rows:
+                    continue
 
-            # Compute fuzzy suggestions
-            for h in header_row:
-                hl = h.lower().replace("_", " ").replace("-", " ")
-                if any(w in hl for w in ["tag", "signal tag", "instrument", "channel tag", "tagname"]):
-                    suggested_map["tag"] = h
-                elif any(w in hl for w in ["desc", "description", "service", "signal desc"]):
-                    suggested_map["description"] = h
-                elif any(w in hl for w in ["type", "signal type", "io type", "i/o type"]):
-                    suggested_map["signal_type"] = h
-                elif any(w in hl for w in ["cable", "cable id", "cable tag", "cable no"]):
-                    suggested_map["cable_id"] = h
-                elif any(w in hl for w in ["pair", "pair no", "core", "wire pair"]):
-                    suggested_map["pair_number"] = h
-                elif any(w in hl for w in ["redundancy", "red", "seg", "segregation"]):
-                    suggested_map["redundancy"] = h
-                elif any(w in hl for w in ["group", "logical group", "system", "unit"]):
-                    suggested_map["logical_group"] = h
+                header_row = None
+                header_row_idx = 0
+                for idx, r in enumerate(rows[:10]):
+                    non_empty = [c for c in r if c is not None and str(c).strip()]
+                    if len(non_empty) >= 2:
+                        header_row = [str(c).strip() if c is not None else f"COL_{i+1}" for i, c in enumerate(r)]
+                        header_row_idx = idx
+                        break
 
-        wb.close()
+                if not header_row:
+                    continue
+
+                headers_map[sheet] = header_row
+
+                preview_rows = []
+                for r in rows[header_row_idx + 1 : header_row_idx + 11]:
+                    row_dict = {}
+                    for h, val in zip(header_row, r):
+                        row_dict[h] = str(val) if val is not None else ""
+                    preview_rows.append(row_dict)
+
+                previews[sheet] = preview_rows
+                ExcelHandler._compute_suggested_mappings(header_row, suggested_map)
+
+            wb.close()
+
         return {
             "sheets": sheet_names,
             "headers": headers_map,
@@ -91,11 +101,88 @@ class ExcelHandler:
         }
 
     @staticmethod
+    def _compute_suggested_mappings(header_row: List[str], suggested_map: Dict[str, str]):
+        norm_headers = [(h, h.lower().replace("_", " ").replace("-", " ").strip()) for h in header_row]
+
+        priorities = [
+            (
+                "tag",
+                ["tag number", "tag no", "tag no.", "instrument tag", "signal tag", "tag_number", "tagnumber", "tag name", "tag"],
+                lambda hl: "tag" in hl and not any(x in hl for x in ["old", "service", "cable", "status", "ferrule", "system"])
+            ),
+            (
+                "description",
+                ["tag service 1 and 2", "service description", "signal description", "tag service", "service", "signal desc", "io description", "description"],
+                lambda hl: any(w in hl for w in ["service", "description", "desc"]) and not any(x in hl for x in ["type", "equipment"])
+            ),
+            (
+                "signal_type",
+                ["i/o type name", "io type name", "i/o type", "io type", "signal type", "i/o type name 2", "point type"],
+                lambda hl: any(hl == w for w in ["signal type", "io type"]) or ("i/o" in hl and "type" in hl)
+            ),
+            (
+                "cable_id",
+                ["multipair cable no.", "multipair cable no", "multi cable / cable", "cable tag", "field cable tag", "cable id", "cable no", "cable number"],
+                lambda hl: "cable" in hl and any(x in hl for x in ["no", "tag", "num", "id"]) and not any(x in hl for x in ["term", "length", "type"])
+            ),
+            (
+                "pair_number",
+                ["pair number", "pair no.", "pair no", "field cable pair", "wire pair", "pair_number", "pair"],
+                lambda hl: "pair" in hl and "multipair" not in hl
+            ),
+            (
+                "redundancy",
+                ["io grouping", "segregation", "redundancy designator", "redundancy", "system 1 (system)", "system", "voting"],
+                lambda hl: any(x in hl for x in ["redund", "grouping", "segreg"])
+            ),
+            (
+                "logical_group",
+                ["process function type", "operating area", "design area", "unit", "logical group", "loop name"],
+                lambda hl: any(x in hl for x in ["area", "unit", "loop name", "process function"])
+            ),
+        ]
+
+        for field, exact_candidates, _ in priorities:
+            if field in suggested_map:
+                continue
+            for cand in exact_candidates:
+                cand_norm = cand.lower().replace("_", " ").replace("-", " ").strip()
+                for original_h, hl in norm_headers:
+                    if hl == cand_norm:
+                        suggested_map[field] = original_h
+                        break
+                if field in suggested_map:
+                    break
+
+        for field, _, fallback_fn in priorities:
+            if field in suggested_map:
+                continue
+            for original_h, hl in norm_headers:
+                if fallback_fn(hl):
+                    suggested_map[field] = original_h
+                    break
+
+    @staticmethod
     def parse_mapped_signals(file_path: str, sheet_name: str, mapping: Dict[str, str]) -> List[SignalRecord]:
         """
-        Parses imported signals based on user-approved column mappings.
+        Parses imported signals based on user-approved column mappings from CSV or Excel.
         """
-        df = pd.read_excel(file_path, sheet_name=sheet_name)
+        is_csv = file_path.lower().endswith('.csv')
+        df = None
+
+        if is_csv:
+            for enc in ['utf-8', 'latin1', 'cp1252', 'utf-8-sig']:
+                try:
+                    df = pd.read_csv(file_path, encoding=enc)
+                    break
+                except Exception:
+                    continue
+        else:
+            df = pd.read_excel(file_path, sheet_name=sheet_name)
+
+        if df is None:
+            raise ValueError(f"Could not read source dataset from {file_path}")
+
         signals: List[SignalRecord] = []
 
         tag_col = mapping.get("tag")
@@ -147,15 +234,51 @@ class ExcelHandler:
                 is_valid = False
                 errors.append("Missing signal type")
 
+            # Check for extra DeltaV metadata in customer columns
+            inst_type = ""
+            for c in ["Instrument Type", "Instrument", "Type"]:
+                if c in row and pd.notna(row[c]):
+                    inst_type = str(row[c]).strip()
+                    break
+
+            sig_level = ""
+            for c in ["Signal Level", "Level", "Wire Type"]:
+                if c in row and pd.notna(row[c]):
+                    sig_level = str(row[c]).strip()
+                    break
+
+            elec_spec = ""
+            for c in ["Signal Type", "Electrical Spec", "Power Specification"]:
+                if c in row and pd.notna(row[c]):
+                    elec_spec = str(row[c]).strip()
+                    break
+
+            ext_pwr = ""
+            for c in ["External Power Supply", "Power Supply", "External Power"]:
+                if c in row and pd.notna(row[c]):
+                    ext_pwr = str(row[c]).strip()
+                    break
+
+            loop_nm = ""
+            for c in ["Loop Name", "Loop", "Internal Loop Order"]:
+                if c in row and pd.notna(row[c]):
+                    loop_nm = str(row[c]).strip()
+                    break
+
             signals.append(SignalRecord(
                 id=idx + 1,
                 tag=tag_val,
                 description=desc_val,
                 signal_type=type_val,
+                signal_level=sig_level,
+                electrical_spec=elec_spec,
+                instrument_type=inst_type,
+                external_power=ext_pwr,
                 cable_id=cable_val,
                 pair_number=pair_val,
                 redundancy=red_val,
                 logical_group=group_val,
+                loop_name=loop_nm,
                 is_valid=is_valid,
                 validation_errors=errors if errors else None
             ))

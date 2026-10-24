@@ -22,6 +22,47 @@ class AllocationEngine:
         self.model_hook = model_hook
         self.last_diagnostics: Optional[SolverDiagnostics] = None
 
+    @staticmethod
+    def select_hardware(signal: SignalRecord, compat_matrix: Dict[str, Any]) -> Tuple[str, str, str, str, str]:
+        st = (signal.signal_type or "").upper().strip()
+        desc = (signal.description or "").lower()
+        inst = (getattr(signal, "instrument_type", None) or "").upper()
+        spec = (getattr(signal, "electrical_spec", None) or "").lower()
+        level = (getattr(signal, "signal_level", None) or "").lower()
+        pwr = (getattr(signal, "external_power", None) or "").upper()
+        tag = (signal.tag or "").upper()
+
+        if "RTD" in st or "rtd" in spec or "rtd" in desc or "3-wire" in level or "-eja" in tag.lower():
+            return ("RTD Input Charm", "SE4303T03", "Standard CHARM Terminal Block", "SE4501", "1, 2, 4")
+
+        if "4-wire" in level or "230vac" in pwr or "110vac" in pwr or "4wire" in spec:
+            return ("AI 4-20 MA HART CHARM", "SE4303T01", "Standard CHARM Terminal Block", "SE4501", "-, 2, 4")
+
+        if (st in ["DO", "DOR", "DO-SOV", "DOR-SOV"]) and (
+            inst in ["XYV", "ZYV", "SOV"] or "solenoid" in desc or "sov" in desc or "do-sov" in st.lower() or "xyv" in tag.lower() or "zyv" in tag.lower() or "sov" in tag.lower()
+        ):
+            return ("DO 24V DC Isolated", "SE4302T02", "Fused-Injected-Power Terminal Block", "SE4502", "-, 2, 4")
+
+        if st in ["DO", "DOR"]:
+            return ("DISCRETE OUTPUT CHARM; 24 VDC; HIGH SIDE", "SE4302T01", "Standard CHARM Terminal Block", "SE4501", "1, 2")
+
+        if st in ["DI", "DIR"]:
+            return ("DISCRETE INPUT CHARM; 24 VDC DRY CONTACT: LOW SIDE SENSE", "SE4301T02", "Standard CHARM Terminal Block", "SE4501", "1, 2")
+
+        if st in ["AO", "AOR"]:
+            return ("AO 4-20 MA HART CHARM", "SE4304T01", "Standard CHARM Terminal Block", "SE4501", "1, 2")
+
+        if st in ["AI", "AIR"]:
+            return ("AI 4-20 MA HART CHARM", "SE4303T01", "Standard CHARM Terminal Block", "SE4501", "1, 2")
+
+        entry = compat_matrix.get(st, {})
+        c_name = entry.get("charm", f"{st} CHARM")
+        c_part = entry.get("charm_part", "SE4303T01")
+        t_name = entry.get("terminal", "Standard CHARM Terminal Block")
+        t_part = entry.get("terminal_part", "SE4501")
+        t_term = entry.get("terminals", "1, 2")
+        return (c_name, c_part, t_name, t_part, t_term)
+
     def run_allocation(
         self,
         signals: List[SignalRecord],
@@ -158,6 +199,16 @@ class AllocationEngine:
         for i in range(num_signals):
             model.Add(sum(x[(i, j)] for j in eligible_slots_for_signal[i]) + u[i] == 1)
 
+        # Optional Constraint: Reserve Baseplate 1 for Cabinet Alarms (EJA)
+        has_cab_alarms = any("-eja" in s.tag.lower() or "cabinet diagnostic alarm" in (s.description or "").lower() for s in valid_signals)
+        if getattr(self.rules, "reserve_first_baseplate_for_cabinet_alarms", False) and baseplates_per_cioc > 1 and has_cab_alarms:
+            for i, s in enumerate(valid_signals):
+                is_cab_alarm = "-eja" in s.tag.lower() or "cabinet diagnostic alarm" in (s.description or "").lower()
+                for j in eligible_slots_for_signal[i]:
+                    slot = all_hardware_slots[j]
+                    if slot["bp_num"] == 1 and not is_cab_alarm:
+                        model.Add(x[(i, j)] == 0)
+
         # Constraint 2: Every hardware slot assigned to at most one signal: sum_i x[i, j] <= 1
         for j in range(num_slots):
             if eligible_signals_for_slot[j]:
@@ -169,9 +220,9 @@ class AllocationEngine:
             # Group signals by redundancy group
             red_groups: Dict[str, Dict[str, List[int]]] = {}
             for i, s in enumerate(valid_signals):
-                red = (s.redundancy or "").upper().strip()
+                red_raw = (s.redundancy or "").upper().strip()
+                red = "A" if red_raw.startswith("A") else ("B" if red_raw.startswith("B") else None)
                 if red in ["A", "B"]:
-                    # Key by logical group or base tag
                     r_key = s.logical_group or (s.tag.split("-")[0] if "-" in s.tag else "GLOBAL")
                     if r_key not in red_groups:
                         red_groups[r_key] = {"A": [], "B": []}
@@ -343,6 +394,11 @@ class AllocationEngine:
                         if prev.cabinet_id == assigned_slot["cab_id"] and prev.cioc_id == assigned_slot["cioc_id"] and prev.baseplate_id == assigned_slot["bp_id"] and prev.charm_index == assigned_slot["charm_idx"]:
                             reason = "Preserved previous revision assignment"
 
+                    ch_no = assigned_slot["charm_idx"]
+                    bp_no = assigned_slot["bp_num"]
+                    charm_no = (bp_no - 1) * 12 + ch_no
+                    c_name, c_part, t_name, t_part, t_term = AllocationEngine.select_hardware(s, self.compat_matrix)
+
                     final_assignments.append(AssignmentModel(
                         signal_id=s.id or (i + 1),
                         tag=s.tag,
@@ -355,9 +411,15 @@ class AllocationEngine:
                         cabinet_id=assigned_slot["cab_id"],
                         cioc_id=assigned_slot["cioc_id"],
                         baseplate_id=assigned_slot["bp_id"],
-                        charm_index=assigned_slot["charm_idx"],
-                        terminal_block=t_block,
-                        charm_type=c_type,
+                        channel_no=ch_no,
+                        charm_index=ch_no,
+                        charm_no=charm_no,
+                        charm_part_no=c_part,
+                        charm_tb_part_no=t_part,
+                        terminal_block=t_name,
+                        charm_tb_terminals=t_term,
+                        charm_type=c_name,
+                        tag_status=getattr(s, "tag_status", "Field") or "Field",
                         status="Allocated",
                         reason=reason
                     ))

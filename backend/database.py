@@ -229,6 +229,14 @@ def init_db():
                 tag TEXT NOT NULL,
                 description TEXT,
                 signal_type TEXT NOT NULL,
+                signal_level TEXT,
+                electrical_spec TEXT,
+                instrument_type TEXT,
+                external_power TEXT,
+                loop_name TEXT,
+                operating_area TEXT,
+                technical_room TEXT,
+                tag_status TEXT DEFAULT 'Field',
                 cable_id TEXT,
                 pair_number INTEGER,
                 redundancy TEXT,
@@ -258,9 +266,15 @@ def init_db():
                 cabinet_id TEXT,
                 cioc_id TEXT,
                 baseplate_id TEXT,
+                channel_no INTEGER,
                 charm_index INTEGER,
+                charm_no INTEGER,
+                charm_part_no TEXT,
+                charm_tb_part_no TEXT,
                 terminal_block TEXT,
+                charm_tb_terminals TEXT,
                 charm_type TEXT,
+                tag_status TEXT DEFAULT 'Field',
                 status TEXT NOT NULL DEFAULT 'Pending',
                 reason TEXT,
                 is_manual_override INTEGER NOT NULL DEFAULT 0,
@@ -365,6 +379,29 @@ def init_db():
             if is_pg:
                 sql = sql.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
             cursor.execute(sql)
+
+        # Run column migrations if tables already exist
+        migrations = [
+            ("imported_signals", "signal_level", "TEXT"),
+            ("imported_signals", "electrical_spec", "TEXT"),
+            ("imported_signals", "instrument_type", "TEXT"),
+            ("imported_signals", "external_power", "TEXT"),
+            ("imported_signals", "loop_name", "TEXT"),
+            ("imported_signals", "operating_area", "TEXT"),
+            ("imported_signals", "technical_room", "TEXT"),
+            ("imported_signals", "tag_status", "TEXT DEFAULT 'Field'"),
+            ("allocation_assignments", "channel_no", "INTEGER"),
+            ("allocation_assignments", "charm_no", "INTEGER"),
+            ("allocation_assignments", "charm_part_no", "TEXT"),
+            ("allocation_assignments", "charm_tb_part_no", "TEXT"),
+            ("allocation_assignments", "charm_tb_terminals", "TEXT"),
+            ("allocation_assignments", "tag_status", "TEXT DEFAULT 'Field'"),
+        ]
+        for tbl, col, col_def in migrations:
+            try:
+                cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {col_def};")
+            except Exception:
+                pass
 
         for index_sql in indexes:
             cursor.execute(index_sql.strip())

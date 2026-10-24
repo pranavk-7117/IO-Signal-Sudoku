@@ -193,11 +193,13 @@ class ValidationEngine:
             # Map: group_key -> {'A': [(tag, cab, cioc)], 'B': [(tag, cab, cioc)]}
             red_placements: Dict[str, Dict[str, List[Tuple[str, str, str]]]] = {}
             for a in assignments:
-                if a.status == "Allocated" and a.redundancy in ["A", "B"] and a.cabinet_id and a.cioc_id:
+                red_raw = (a.redundancy or "").upper().strip()
+                red_norm = "A" if red_raw.startswith("A") else ("B" if red_raw.startswith("B") else None)
+                if a.status == "Allocated" and red_norm in ["A", "B"] and a.cabinet_id and a.cioc_id:
                     r_key = a.logical_group or (a.tag.split("-")[0] if "-" in a.tag else "GLOBAL")
                     if r_key not in red_placements:
                         red_placements[r_key] = {"A": [], "B": []}
-                    red_placements[r_key][a.redundancy].append((a.tag, a.cabinet_id, a.cioc_id))
+                    red_placements[r_key][red_norm].append((a.tag, a.cabinet_id, a.cioc_id))
 
             for r_key, channels in red_placements.items():
                 a_list = channels["A"]

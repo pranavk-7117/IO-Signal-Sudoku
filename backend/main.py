@@ -55,10 +55,7 @@ app.add_middleware(
 @app.on_event("startup")
 def startup_event():
     init_db()
-    # Seed demo project if DB empty
-    projects = DBService.list_projects()
-    if not projects:
-        seed_demo_project()
+    # Clean zero-preload startup: wait for user uploads during testing
 
 @app.get("/api/health")
 def health_check():
@@ -135,7 +132,7 @@ def switch_active_revision(project_id: int, revision_id: int = Query(...)):
 # --- Excel Upload & Column Mapping ---
 @app.post("/api/upload/inspect")
 async def inspect_uploaded_file(file: UploadFile = File(...)):
-    if not file.filename.endswith(('.xlsx', '.xls')):
+    if not file.filename.lower().endswith(('.xlsx', '.xls', '.csv')):
         raise HTTPException(status_code=400, detail="Only Excel files (.xlsx, .xls) are supported.")
     
     saved_path = os.path.join(UPLOAD_DIR, file.filename)
