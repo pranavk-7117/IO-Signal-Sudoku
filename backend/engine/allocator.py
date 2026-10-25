@@ -413,6 +413,10 @@ class AllocationEngine:
         unallocated_signals = [s for s in valid_signals if s.tag not in allocated_tags]
         cable_units = self._build_cable_units(unallocated_signals)
 
+        presolve_duration = time.time() - start_time
+        total_slots = num_ciocs * (self.config.baseplates_per_cioc or 8) * (self.config.charms_per_baseplate or 12)
+        raw_potential_variables = len(signals) * total_slots
+
         # Step 6: Genuine Google OR-Tools CP-SAT Optimization Solver
         cp_solver_name = "Google OR-Tools CP-SAT"
 
@@ -527,6 +531,39 @@ class AllocationEngine:
             solver_status_code = solver.Solve(model)
             solver_status = solver.StatusName(solver_status_code)
 
+            reduction_pct = round(((raw_potential_variables - len(model.Proto().variables)) / max(1, raw_potential_variables)) * 100.0, 1)
+
+            stage_1_info = {
+                "name": "Deterministic Rule & Hardware Presolver",
+                "duration_ms": round(presolve_duration * 1000, 2),
+                "rules_presolved": [
+                    "Technical Room Physical Partitioning",
+                    "Deterministic CHARM & Fused TB Hardware Typing",
+                    "Cabinet Diagnostic Alarm Static Placement",
+                    "Revision Stability Address Freezing",
+                    "Macro-Cable Interval Aggregation (12x-24x Reduction)"
+                ],
+                "signals_pre_assigned": len(allocated_tags),
+                "deleted_signals_vacated": len(deleted_signals),
+                "macro_cable_blocks_created": len(cable_units),
+                "raw_domain_variables": raw_potential_variables,
+                "cpsat_variables_fed": len(model.Proto().variables),
+                "search_space_reduction_pct": reduction_pct
+            }
+
+            stage_2_info = {
+                "name": "Google OR-Tools CP-SAT (Integer Programming)",
+                "duration_ms": round(solver.WallTime() * 1000, 2),
+                "hard_rules_enforced": [
+                    "Multi-Pair Field Cable Baseplate Contiguity (Adjacent Intervals)",
+                    "Train A / Train B Odd/Even Parity CIOC Segregation",
+                    "Per-Controller 10.0% Wired Spare Margins by IO Type"
+                ],
+                "active_macro_variables": len(model.Proto().variables),
+                "constraints_enforced": len(model.Proto().constraints),
+                "status": solver_status
+            }
+
             self.last_diagnostics = SolverDiagnostics(
                 solver_name=cp_solver_name,
                 solver_status=solver_status,
@@ -537,7 +574,12 @@ class AllocationEngine:
                 details={
                     "wall_time": solver.WallTime(),
                     "status_code": solver_status_code,
-                    "cables_count": len(cable_units)
+                    "cables_count": len(cable_units),
+                    "presolve_time_seconds": round(presolve_duration, 4),
+                    "staged_pipeline": {
+                        "stage_1_presolver": stage_1_info,
+                        "stage_2_cpsat": stage_2_info
+                    }
                 }
             )
 
@@ -591,6 +633,30 @@ class AllocationEngine:
                     include_spares=include_spares, previous_assignments=previous_assignments
                 )
         else:
+            stage_1_info = {
+                "name": "Deterministic Rule & Hardware Presolver",
+                "duration_ms": round(presolve_duration * 1000, 2),
+                "rules_presolved": [
+                    "Technical Room Physical Partitioning",
+                    "Deterministic CHARM & Fused TB Hardware Typing",
+                    "Cabinet Diagnostic Alarm Static Placement",
+                    "Revision Stability Address Freezing"
+                ],
+                "signals_pre_assigned": len(allocated_tags),
+                "deleted_signals_vacated": len(deleted_signals),
+                "macro_cable_blocks_created": 0,
+                "raw_domain_variables": raw_potential_variables,
+                "cpsat_variables_fed": 0,
+                "search_space_reduction_pct": 100.0
+            }
+            stage_2_info = {
+                "name": "Google OR-Tools CP-SAT (Integer Programming)",
+                "duration_ms": 0.0,
+                "hard_rules_enforced": [],
+                "active_macro_variables": 0,
+                "constraints_enforced": 0,
+                "status": "NOT_NEEDED_ALL_PRESOLVED"
+            }
             self.last_diagnostics = SolverDiagnostics(
                 solver_name=cp_solver_name,
                 solver_status="OPTIMAL",
@@ -598,7 +664,14 @@ class AllocationEngine:
                 solve_time_seconds=0.001,
                 num_decision_variables=0,
                 num_constraints=0,
-                details={"message": "All signals pinned or resolved"}
+                details={
+                    "message": "All signals pinned or resolved",
+                    "presolve_time_seconds": round(presolve_duration, 4),
+                    "staged_pipeline": {
+                        "stage_1_presolver": stage_1_info,
+                        "stage_2_cpsat": stage_2_info
+                    }
+                }
             )
 
         # Step 8 & 9: Full Hardware Schedule (Wired Spares & SE6103 Spare Slots)

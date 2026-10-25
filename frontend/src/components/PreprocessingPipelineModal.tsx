@@ -123,6 +123,77 @@ export const PreprocessingPipelineModal: React.FC<PreprocessingPipelineModalProp
                 </div>
               </div>
 
+              {/* Two-Stage Architecture Execution Flow */}
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl text-white space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                  <div className="flex items-center space-x-2">
+                    <Zap className="w-4 h-4 text-teal-400" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-100">
+                      Two-Stage Decomposition & Presolve Pipeline
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                    Industrial Scalability Standard
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  {/* Stage 1 Box */}
+                  <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-teal-300">Stage 1: Fast Rule Presolver & Filter</span>
+                      <span className="text-[10px] text-teal-400 font-mono font-bold">&lt; 3 ms</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Filters soft rules, deterministic hardware typing, and static intervals before integer programming:
+                    </p>
+                    <ul className="space-y-1 text-[11px] text-slate-300">
+                      <li className="flex items-center space-x-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+                        <span><strong>Tech Room Partitions:</strong> Decouple sub-models by physical room</span>
+                      </li>
+                      <li className="flex items-center space-x-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+                        <span><strong>Hardware Typing:</strong> SOV to Isolated DO SE4302T02 + Fused TB</span>
+                      </li>
+                      <li className="flex items-center space-x-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+                        <span><strong>Alarms & Pinning:</strong> Hard-code Baseplate 1 diagnostics & Rev A</span>
+                      </li>
+                      <li className="flex items-center space-x-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+                        <span><strong>Macro-Cable Fusion:</strong> 12x-24x variable reduction into blocks</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  {/* Stage 2 Box */}
+                  <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-blue-300">Stage 2: Google OR-Tools CP-SAT</span>
+                      <span className="text-[10px] text-blue-400 font-mono font-bold">Sub-Second Solve</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Receives only the reduced, filtered macro decision blocks to solve hard combinatorial rules:
+                    </p>
+                    <ul className="space-y-1 text-[11px] text-slate-300">
+                      <li className="flex items-center space-x-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                        <span><strong>Cable Contiguity:</strong> 12p/24p multi-pairs across adjacent baseplates</span>
+                      </li>
+                      <li className="flex items-center space-x-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                        <span><strong>Train A/B Parity:</strong> Strict odd/even CIOC carrier segregation</span>
+                      </li>
+                      <li className="flex items-center space-x-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                        <span><strong>Wired Spares:</strong> Enforce 10% spare threshold by IO type per controller</span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
               {/* Technical Room Decoupling */}
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
                 <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block">

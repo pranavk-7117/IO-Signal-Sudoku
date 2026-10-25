@@ -6,7 +6,8 @@ import {
   CounterfactualResponse, BlastRadiusResponse,
   PreflightLintResponse, ReferenceScorecardResponse,
   PreprocessingAnalysisResponse, ParetoResponse,
-  WiredSpareTakeoverResponse, DeliverablesPackResponse, FieldQRLabel
+  WiredSpareTakeoverResponse, DeliverablesPackResponse, FieldQRLabel,
+  AllocationRunResult
 } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
@@ -221,7 +222,7 @@ export const api = {
   },
 
   // Allocation
-  runAllocation: async (projectId: number, revisionId: number, preserveExisting = true) => {
+  runAllocation: async (projectId: number, revisionId: number, preserveExisting = true): Promise<AllocationRunResult> => {
     const res = await fetch(`${API_BASE}/allocation/run?project_id=${projectId}&revision_id=${revisionId}&preserve_existing=${preserveExisting}`, {
       method: 'POST'
     });

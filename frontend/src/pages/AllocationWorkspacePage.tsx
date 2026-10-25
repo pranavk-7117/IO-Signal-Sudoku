@@ -13,13 +13,14 @@ import {
   ExternalLink,
   Layers,
   Info,
-  HelpCircle
+  HelpCircle,
+  Zap
 } from 'lucide-react';
 import { ExplainabilityDrawer } from '../components/ExplainabilityDrawer';
 import { CounterfactualModal } from '../components/CounterfactualModal';
 import { useProject } from '../context/ProjectContext';
 import { api } from '../services/api';
-import { Assignment } from '../types';
+import { Assignment, AllocationRunResult } from '../types';
 import { StatusBadge } from '../components/ui/StatusBadge';
 
 export const AllocationWorkspacePage: React.FC = () => {
@@ -28,6 +29,8 @@ export const AllocationWorkspacePage: React.FC = () => {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(false);
   const [runningSolver, setRunningSolver] = useState(false);
+  const [lastRunResult, setLastRunResult] = useState<AllocationRunResult | null>(null);
+  const [showPresolveDetails, setShowPresolveDetails] = useState<boolean>(true);
 
   // Filters & Search
   const [search, setSearch] = useState('');
@@ -70,7 +73,8 @@ export const AllocationWorkspacePage: React.FC = () => {
     if (!currentProject || !currentRevision) return;
     try {
       setRunningSolver(true);
-      await api.runAllocation(currentProject.id, currentRevision.id, true);
+      const res = await api.runAllocation(currentProject.id, currentRevision.id, true);
+      setLastRunResult(res);
       await loadAssignments();
       await refreshProjects();
       await refreshRevisions();
@@ -209,6 +213,96 @@ export const AllocationWorkspacePage: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Two-Stage Presolve + CP-SAT Diagnostics Banner */}
+      {lastRunResult && lastRunResult.diagnostics?.details?.staged_pipeline && (
+        <div className="bg-slate-900 border border-slate-700 rounded-xl p-3.5 text-white shadow-lg mb-2 animate-in fade-in">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-2.5 border-b border-slate-800">
+            <div className="flex items-center space-x-2.5">
+              <div className="w-8 h-8 rounded-lg bg-teal-500/20 border border-teal-500/40 flex items-center justify-center text-teal-400">
+                <Zap className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center space-x-2">
+                  <h4 className="text-xs font-bold text-slate-100 uppercase tracking-wider">
+                    Two-Stage Presolver + Google OR-Tools CP-SAT
+                  </h4>
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    {lastRunResult.diagnostics.solver_status} ({lastRunResult.diagnostics.solve_time_seconds}s)
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Soft & deterministic rules pre-solved upfront; CP-SAT solved combinatorial constraints with{' '}
+                  <strong className="text-teal-300">
+                    {lastRunResult.diagnostics.details.staged_pipeline.stage_1_presolver.search_space_reduction_pct}%
+                  </strong>{' '}
+                  search space reduction.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowPresolveDetails(!showPresolveDetails)}
+              className="text-xs text-teal-400 hover:text-teal-300 font-semibold flex items-center space-x-1"
+            >
+              <span>{showPresolveDetails ? 'Hide Stage Breakdown' : 'View Two-Stage Breakdown'}</span>
+            </button>
+          </div>
+
+          {showPresolveDetails && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 pt-1 text-xs">
+              {/* Stage 1: Deterministic Fast Presolver */}
+              <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-1.5 font-bold text-teal-300">
+                    <span>Stage 1: Fast Rule Presolver & Filter</span>
+                  </div>
+                  <span className="font-mono text-[10px] text-teal-400 font-bold">
+                    {lastRunResult.diagnostics.details.staged_pipeline.stage_1_presolver.duration_ms} ms
+                  </span>
+                </div>
+                <div className="space-y-1 text-[11px] text-slate-300">
+                  {lastRunResult.diagnostics.details.staged_pipeline.stage_1_presolver.rules_presolved.map((r: string, idx: number) => (
+                    <div key={idx} className="flex items-center space-x-1.5 text-slate-300">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+                      <span>{r}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                  <span>Pre-assigned Signals: <strong className="text-white">{lastRunResult.diagnostics.details.staged_pipeline.stage_1_presolver.signals_pre_assigned}</strong></span>
+                  <span>Eliminated from CP-SAT: <strong className="text-teal-300">-{lastRunResult.diagnostics.details.staged_pipeline.stage_1_presolver.search_space_reduction_pct}%</strong></span>
+                </div>
+              </div>
+
+              {/* Stage 2: Google OR-Tools CP-SAT */}
+              <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-1.5 font-bold text-blue-300">
+                    <span>Stage 2: Google OR-Tools CP-SAT</span>
+                  </div>
+                  <span className="font-mono text-[10px] text-blue-400 font-bold">
+                    {lastRunResult.diagnostics.details.staged_pipeline.stage_2_cpsat.duration_ms} ms
+                  </span>
+                </div>
+                <div className="space-y-1 text-[11px] text-slate-300">
+                  {lastRunResult.diagnostics.details.staged_pipeline.stage_2_cpsat.hard_rules_enforced.map((r: string, idx: number) => (
+                    <div key={idx} className="flex items-center space-x-1.5 text-slate-300">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                      <span>{r}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                  <span>Macro Variables: <strong className="text-white">{lastRunResult.diagnostics.details.staged_pipeline.stage_2_cpsat.active_macro_variables}</strong></span>
+                  <span>Constraints: <strong className="text-white">{lastRunResult.diagnostics.details.staged_pipeline.stage_2_cpsat.constraints_enforced}</strong></span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
       <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">

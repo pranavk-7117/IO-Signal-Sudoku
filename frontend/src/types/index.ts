@@ -588,3 +588,53 @@ export interface FieldQRLabel {
     is_spare: boolean;
   }>;
 }
+
+export interface SolverDiagnostics {
+  solver_name: string;
+  solver_status: string;
+  is_optimal: boolean;
+  solve_time_seconds: number;
+  objective_value?: number;
+  num_decision_variables: number;
+  num_constraints: number;
+  details?: {
+    wall_time?: number;
+    status_code?: number;
+    cables_count?: number;
+    presolve_time_seconds?: number;
+    staged_pipeline?: {
+      stage_1_presolver: {
+        name: string;
+        duration_ms: number;
+        rules_presolved: string[];
+        signals_pre_assigned: number;
+        deleted_signals_vacated: number;
+        macro_cable_blocks_created: number;
+        raw_domain_variables: number;
+        cpsat_variables_fed: number;
+        search_space_reduction_pct: number;
+      };
+      stage_2_cpsat: {
+        name: string;
+        duration_ms: number;
+        hard_rules_enforced: string[];
+        active_macro_variables: number;
+        constraints_enforced: number;
+        status: string;
+      };
+    };
+    [key: string]: any;
+  };
+}
+
+export interface AllocationRunResult {
+  message: string;
+  total_signals: number;
+  allocated_count: number;
+  unallocated_count: number;
+  validation_errors: number;
+  validation_warnings: number;
+  is_fully_validated: boolean;
+  approval_eligible: boolean;
+  diagnostics: SolverDiagnostics;
+}
