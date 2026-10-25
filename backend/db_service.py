@@ -1027,3 +1027,13 @@ class DBService:
         conn.close()
 
     log_audit = add_audit_log
+
+    @staticmethod
+    def get_previous_assignments(project_id: int, revision_id: int) -> Optional[Dict[str, AssignmentModel]]:
+        revs = DBService.get_revisions(project_id)
+        curr_idx = next((i for i, r in enumerate(revs) if r["id"] == revision_id), None)
+        if curr_idx is not None and curr_idx > 0:
+            prev_rev = revs[curr_idx - 1]
+            prev_allocs = DBService.get_assignments(project_id, prev_rev["id"])
+            return {a.tag: a for a in prev_allocs}
+        return None

@@ -46,6 +46,21 @@ def test_preprocessing_partitioning_and_conflict_graph():
     sim13 = SignalPreprocessor.vector_cosine_similarity(v1, v3)
     assert sim12 > sim13
 
+def test_preprocessing_analysis_endpoint():
+    from main import get_preprocessing_analysis
+    from db_service import DBService
+    from database import init_db
+    init_db()
+    projs = DBService.list_projects()
+    if not projs:
+        pytest.skip("No projects available")
+    proj_id = projs[0]["id"]
+    res = get_preprocessing_analysis(proj_id)
+    assert res is not None
+    assert "total_signals_received" in res
+    assert "active_signals_fed_to_solver" in res
+    assert "conflict_graph" in res
+
 def test_pareto_layout_alternatives():
     config = HardwareConfigModel()
     signals = [SignalRecord(tag=f"FT-{i}", signal_type="AI") for i in range(1, 101)]

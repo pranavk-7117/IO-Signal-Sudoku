@@ -23,6 +23,11 @@ export const PreprocessingPipelineModal: React.FC<PreprocessingPipelineModalProp
   }, [projectId, revisionId]);
 
   const loadAnalysis = async () => {
+    if (!projectId) {
+      setError('Please select an active project to view preprocessing telemetry.');
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -69,8 +74,23 @@ export const PreprocessingPipelineModal: React.FC<PreprocessingPipelineModalProp
           )}
 
           {error && (
-            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg">
-              {error}
+            <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold flex items-center space-x-1.5 text-rose-700">
+                  <ShieldAlert className="w-4 h-4 text-rose-600" />
+                  <span>Preprocessing Pipeline Status</span>
+                </span>
+                <button
+                  onClick={loadAnalysis}
+                  className="px-2.5 py-1 bg-white border border-rose-300 text-rose-700 hover:bg-rose-100 rounded-lg text-xs font-semibold flex items-center space-x-1 shadow-xs transition-colors"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Retry Analysis</span>
+                </button>
+              </div>
+              <p className="text-slate-600">
+                {error}. Ensure the backend service is running and the active revision has imported signals.
+              </p>
             </div>
           )}
 
