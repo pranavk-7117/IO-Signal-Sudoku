@@ -357,13 +357,22 @@ class AllocationEngine:
             cur_ch = start_ch
             c_def = cioc_defs[target_cioc_idx]
             for s in alarms:
+                prev_a = previous_assignments.get(s.tag) if (previous_assignments and self.config.rules.preserve_previous_assignments) else None
+                if prev_a and prev_a.status in ["Allocated", "Cabinet Alarm"] and prev_a.charm_index and channel_grid.get((target_cioc_idx, 1, prev_a.charm_index)) is None:
+                    ch_to_use = prev_a.charm_index
+                else:
+                    while channel_grid.get((target_cioc_idx, 1, cur_ch)) is not None:
+                        cur_ch += 1
+                    ch_to_use = cur_ch
+                    cur_ch += 1
                 assign = self._create_assignment_for_cioc(
-                    s, None, s.pair_number or cur_ch, c_def, 1, cur_ch, tag_status="Cabinet Alarm"
+                    s, None, s.pair_number or ch_to_use, c_def, 1, ch_to_use, tag_status="Cabinet Alarm"
                 )
-                channel_grid[(target_cioc_idx, 1, cur_ch)] = assign
+                if prev_a:
+                    assign.change_type = "Unchanged"
+                channel_grid[(target_cioc_idx, 1, ch_to_use)] = assign
                 allocated_assignments.append(assign)
                 allocated_tags.add(s.tag)
-                cur_ch += 1
 
         if has_tech_rooms:
             place_alarm_list(cab1_alarms, 0, start_ch=1)
@@ -385,7 +394,7 @@ class AllocationEngine:
                     bp_num = extract_bp_num(prev_a.baseplate_id)
                     ch_num = prev_a.charm_index
                     c_idx = next(
-                        (i for i, c in enumerate(cioc_defs) if c.cioc_id == prev_a.cioc_id or (c.system_cabinet == prev_a.system_cabinet and extract_bp_num(c.format_baseplate_name(bp_num)) == bp_num)),
+                        (i for i, c in enumerate(cioc_defs) if c.cioc_id == prev_a.cioc_id),
                         None
                     )
                     if c_idx is not None and channel_grid.get((c_idx, bp_num, ch_num)) is None:

@@ -96,3 +96,50 @@ def test_full_customer_io_mdb_dataset_100_percent_allocation():
             assert a.charm_part_no == "SE4302T02", f"SOV {a.tag} must use Isolated DO SE4302T02"
             assert a.charm_tb_part_no == "SE4502", f"SOV {a.tag} must use Fused Injected Power TB SE4502"
             assert a.charm_tb_terminals == "-, 2, 4"
+
+
+def test_rev_b_exact_pinning_zero_unchanged_moves():
+    mdb_path = os.path.join(os.path.dirname(__file__), "..", "sample_files", "official", "Customer_IO_MDB.xlsx")
+    insp = ExcelHandler.inspect_workbook(mdb_path)
+    mapping = insp["suggested_mappings"]
+    signals_rev_a = ExcelHandler.parse_mapped_signals(mdb_path, "MDB-1", mapping)
+
+    config = HardwareConfigModel()
+    engine = AllocationEngine(config)
+    assigns_rev_a = engine.run_allocation(signals_rev_a)
+    allocated_a = {a.tag: a for a in assigns_rev_a if a.status == "Allocated"}
+
+    # Simulate Rev B: Delete 2 signals, Add 3 new signals
+    all_tags = list(allocated_a.keys())
+    tags_to_delete = all_tags[:2]
+    unchanged_tags = all_tags[2:]
+
+    signals_rev_b = []
+    # Retain unchanged signals
+    for s in signals_rev_a:
+        if s.tag in tags_to_delete:
+            continue
+        signals_rev_b.append(s)
+
+    # Add 3 new signals
+    signals_rev_b.append(SignalRecord(tag="320-NEW-FT-001", signal_type="AI", electrical_spec="4-20mA", cable_id="CABLE-NEW-01", pair_number=1))
+    signals_rev_b.append(SignalRecord(tag="320-NEW-FT-002", signal_type="AI", electrical_spec="4-20mA", cable_id="CABLE-NEW-01", pair_number=2))
+    signals_rev_b.append(SignalRecord(tag="320-NEW-XV-003", signal_type="DO", electrical_spec="24VDC", cable_id="CABLE-NEW-02", pair_number=1))
+
+    # Run allocation for Rev B with previous_assignments passed
+    assigns_rev_b = engine.run_allocation(signals_rev_b, previous_assignments=allocated_a)
+    allocated_b = {a.tag: a for a in assigns_rev_b if a.status == "Allocated"}
+
+    # Verify that exactly 0 unchanged signals moved!
+    moved_signals = []
+    for tag in unchanged_tags:
+        a_old = allocated_a[tag]
+        a_new = allocated_b.get(tag)
+        assert a_new is not None, f"Unchanged signal {tag} must be allocated in Rev B"
+        old_loc = (a_old.cabinet_id, a_old.cioc_id, a_old.baseplate_id, a_old.charm_index)
+        new_loc = (a_new.cabinet_id, a_new.cioc_id, a_new.baseplate_id, a_new.charm_index)
+        if old_loc != new_loc:
+            moved_signals.append((tag, old_loc, new_loc))
+
+    assert len(moved_signals) == 0, f"Expected 0 moved signals on Rev B, but {len(moved_signals)} moved: {moved_signals[:5]}"
+
