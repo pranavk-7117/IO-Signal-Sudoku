@@ -31,6 +31,7 @@ import { BlastRadiusModal } from '../components/BlastRadiusModal';
 import { PreflightDoctorModal } from '../components/PreflightDoctorModal';
 import { ReferenceScorecardModal } from '../components/ReferenceScorecardModal';
 import { CabinetElevationView } from '../components/CabinetElevationView';
+import { FieldCableWiringVisualizer } from '../components/FieldCableWiringVisualizer';
 import { ParetoLayoutModal } from '../components/ParetoLayoutModal';
 import { WiredSpareTakeoverModal } from '../components/WiredSpareTakeoverModal';
 import { DeliverablesPackModal } from '../components/DeliverablesPackModal';
@@ -67,7 +68,7 @@ export const UtilisationPage: React.FC = () => {
     tag?: string;
   } | null>(null);
 
-  const [viewMode, setViewMode] = useState<'carriers' | 'elevation'>('carriers');
+  const [viewMode, setViewMode] = useState<'wiring' | 'carriers' | 'elevation'>('wiring');
   const [rackColorMode, setRackColorMode] = useState<'signal_type' | 'field_cables'>('field_cables');
   const [highlightedCableId, setHighlightedCableId] = useState<string | null>(null);
 
@@ -437,9 +438,18 @@ export const UtilisationPage: React.FC = () => {
             <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-300">
               <button
                 type="button"
+                onClick={() => setViewMode('wiring')}
+                className={`px-2.5 py-1 text-xs font-bold rounded-md transition-colors cursor-pointer ${
+                  viewMode === 'wiring' ? 'bg-blue-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Wiring & Baseplates (Interactive)
+              </button>
+              <button
+                type="button"
                 onClick={() => setViewMode('carriers')}
-                className={`px-2.5 py-1 text-xs font-bold rounded-md transition-colors ${
-                  viewMode === 'carriers' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                className={`px-2.5 py-1 text-xs font-bold rounded-md transition-colors cursor-pointer ${
+                  viewMode === 'carriers' ? 'bg-blue-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 Carrier View
@@ -447,8 +457,8 @@ export const UtilisationPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setViewMode('elevation')}
-                className={`px-2.5 py-1 text-xs font-bold rounded-md transition-colors ${
-                  viewMode === 'elevation' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                className={`px-2.5 py-1 text-xs font-bold rounded-md transition-colors cursor-pointer ${
+                  viewMode === 'elevation' ? 'bg-blue-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 Elevation (F/R)
@@ -490,8 +500,27 @@ export const UtilisationPage: React.FC = () => {
           </div>
         </div>
 
-        {/* View Mode: Cabinet Walkthrough Elevation vs Carrier Baseplates Grid */}
-        {viewMode === 'elevation' ? (
+        {/* View Mode: Wiring & Baseplates vs Elevation vs Carrier Baseplates Grid */}
+        {viewMode === 'wiring' ? (
+          <FieldCableWiringVisualizer
+            summary={summary}
+            selectedCabinetId={selectedCabinet}
+            onSelectCabinet={(id) => {
+              setSelectedCabinet(id);
+              const targetCab = summary.cabinets.find((c) => c.cabinet_id === id);
+              if (targetCab && targetCab.ciocs.length > 0) {
+                setSelectedCIOC(targetCab.ciocs[0].cioc_id);
+              }
+            }}
+            selectedCiocId={selectedCIOC}
+            onSelectCioc={(id) => setSelectedCIOC(id)}
+            onOpenExplainability={(tag) => setExplainingTag(tag)}
+            onSelectSlot={(slot) => {
+              setCounterfactualSlot(slot);
+              setShowCounterfactualModal(true);
+            }}
+          />
+        ) : viewMode === 'elevation' ? (
           <CabinetElevationView
             summary={summary}
             selectedCabinetId={selectedCabinet}
