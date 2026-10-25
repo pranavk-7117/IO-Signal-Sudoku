@@ -17,7 +17,8 @@ import {
   Sparkles,
   FileText,
   QrCode,
-  Network
+  Network,
+  RefreshCw
 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { api } from '../services/api';
@@ -96,11 +97,7 @@ export const UtilisationPage: React.FC = () => {
     }
   };
 
-  if (!summary) {
-    return <div className="p-8 text-center text-xs text-slate-500">Loading hardware utilisation metrics...</div>;
-  }
-
-  const cab = summary.cabinets.find((c) => c.cabinet_id === selectedCabinet) || summary.cabinets[0];
+  const cab = summary?.cabinets.find((c) => c.cabinet_id === selectedCabinet) || summary?.cabinets[0];
   const cioc = cab?.ciocs.find((ci) => ci.cioc_id === selectedCIOC) || cab?.ciocs[0];
 
   // Industrial color palette for multi-pair field cables
@@ -130,9 +127,9 @@ export const UtilisationPage: React.FC = () => {
     return colors[Math.abs(hash)];
   };
 
-  // Derive multi-pair cable groupings, baseplate spans, and contiguity rationales on active CIOC
+  // Derive multi-pair cable groupings, baseplate spans, and contiguity rationales on active CIOC (Hook called unconditionally)
   const cableGroupings = React.useMemo(() => {
-    if (!cioc) return [];
+    if (!cioc || !cioc.baseplates) return [];
     const map = new Map<string, {
       cable_id: string;
       slots: Array<{ baseplate: string; channel: number; pair?: number; tag?: string; sigType?: string }>;
@@ -198,6 +195,33 @@ export const UtilisationPage: React.FC = () => {
         Free: c.free_slots,
       }))
     : [];
+
+  if (!summary) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-200">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center space-x-2">
+              <Layers className="w-5 h-5 text-blue-600 animate-spin" />
+              <span>Hardware Utilisation & Spare Capacity</span>
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Loading physical footprint and carrier occupancy for {currentProject?.name || 'active project'}...
+            </p>
+          </div>
+        </div>
+        <div className="p-12 text-center bg-white rounded-xl border border-slate-200 shadow-2xs space-y-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto animate-spin">
+            <RefreshCw className="w-5 h-5" />
+          </div>
+          <div className="text-sm font-bold text-slate-800">Synthesizing Carrier Rack Topology</div>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+            Reading CIOC baseplates, 24-pair multi-core trunk mappings, and SE6103 protection covers.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -628,8 +652,8 @@ export const UtilisationPage: React.FC = () => {
                               setExplainingTag(slot.signal_tag);
                             } else {
                               setCounterfactualSlot({
-                                cabinet: cab.cabinet_id,
-                                cioc: cioc.cioc_id,
+                                cabinet: cab?.cabinet_id || '',
+                                cioc: cioc?.cioc_id || '',
                                 baseplate: bp.baseplate_id,
                                 channel: slot.charm_index
                               });
