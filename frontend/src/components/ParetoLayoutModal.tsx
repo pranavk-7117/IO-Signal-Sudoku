@@ -1,5 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { X, Sliders, Layers, ShieldCheck, CheckCircle2, RefreshCw, Cpu, Server, Box, Ruler } from 'lucide-react';
+import {
+  X,
+  Sliders,
+  Layers,
+  ShieldCheck,
+  CheckCircle2,
+  RefreshCw,
+  Server,
+  Box,
+  Ruler,
+  Plus,
+  Minus,
+  Play,
+  AlertTriangle,
+  Sparkles
+} from 'lucide-react';
 import { api } from '../services/api';
 import { ParetoResponse, ParetoAlternative } from '../types';
 
@@ -7,17 +22,23 @@ interface ParetoLayoutModalProps {
   projectId: number;
   revisionId?: number;
   onClose: () => void;
+  onApplied?: () => void;
 }
 
 export const ParetoLayoutModal: React.FC<ParetoLayoutModalProps> = ({
   projectId,
   revisionId,
-  onClose
+  onClose,
+  onApplied
 }) => {
   const [data, setData] = useState<ParetoResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedAltId, setSelectedAltId] = useState<string>('ALT_MAX_SPARE');
+  const [customCiocs, setCustomCiocs] = useState<number>(12);
+  const [applying, setApplying] = useState<boolean>(false);
+  const [applySuccess, setApplySuccess] = useState<string | null>(null);
+  const [applyError, setApplyError] = useState<string | null>(null);
 
   useEffect(() => {
     loadPareto();
@@ -30,7 +51,9 @@ export const ParetoLayoutModal: React.FC<ParetoLayoutModalProps> = ({
       const res = await api.getParetoAlternatives(projectId, revisionId);
       setData(res);
       if (res.alternatives.length > 0) {
-        setSelectedAltId(res.alternatives[1]?.id || res.alternatives[0].id);
+        const defaultAlt = res.alternatives[1] || res.alternatives[0];
+        setSelectedAltId(defaultAlt.id);
+        setCustomCiocs(defaultAlt.boq?.cioc_carriers || 12);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to generate Pareto layout alternatives');
@@ -40,6 +63,53 @@ export const ParetoLayoutModal: React.FC<ParetoLayoutModalProps> = ({
   };
 
   const selectedAlt = data?.alternatives.find((a) => a.id === selectedAltId) || data?.alternatives[0];
+
+  // Real-time calculated hardware metrics based on customCiocs
+  const totalSlots = customCiocs * 96;
+  const numOperating = data?.dataset_signals_count || 177;
+  const numAlarms = 12;
+  const requiredChannels = numOperating + numAlarms;
+  const isFeasible = totalSlots >= requiredChannels;
+  const calculatedCabinets = Math.ceil(customCiocs / 4);
+  const calculatedBayWidth = calculatedCabinets * 800;
+  const calculatedDensity = Math.min(100, Math.round((requiredChannels / totalSlots) * 1000) / 10);
+  const calculatedHeadroom = Math.max(0, Math.round((100 - calculatedDensity) * 10) / 10);
+  const freeSpares = Math.max(0, totalSlots - requiredChannels);
+
+  // Apply Hardware Topology & Reallocate
+  const handleApplyTopology = async () => {
+    if (!revisionId || !isFeasible) return;
+    setApplying(true);
+    setApplyError(null);
+    setApplySuccess(null);
+
+    try {
+      // 1. Fetch current hardware config
+      const hwConfig = await api.getHardwareConfig(projectId, revisionId);
+      hwConfig.cabinets_count = calculatedCabinets;
+      hwConfig.ciocs_per_cabinet = 4;
+
+      // 2. Save hardware config with new CIOC & cabinet count
+      await api.saveHardwareConfig(projectId, hwConfig, revisionId);
+
+      // 3. Re-run allocation solver with new hardware capacity
+      await api.runAllocation(projectId, revisionId, true, true);
+
+      setApplySuccess(
+        `Successfully sized hardware to ${customCiocs} CIOCs (${calculatedCabinets} Cabinets, ${totalSlots} Slots) and reallocated!`
+      );
+
+      // Notify parent to refresh Utilisation rack visualizer
+      setTimeout(() => {
+        onApplied?.();
+        onClose();
+      }, 1200);
+    } catch (err: any) {
+      setApplyError(err.message || 'Failed to apply hardware topology');
+    } finally {
+      setApplying(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 overflow-y-auto">
@@ -51,9 +121,9 @@ export const ParetoLayoutModal: React.FC<ParetoLayoutModalProps> = ({
               <Sliders className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-900">Physical Architecture & Hardware Layout Trade-offs</h3>
+              <h3 className="text-base font-bold text-slate-900">Physical Architecture & CIOC Carrier Sizing</h3>
               <p className="text-xs text-slate-500">
-                Comparing CIOC carrier quantities, cabinet bay widths, channel packing densities, and wired spare headrooms
+                Change the number of CIOC carriers, evaluate bay width & headroom trade-offs, and 1-click reallocate
               </p>
             </div>
           </div>
@@ -82,7 +152,130 @@ export const ParetoLayoutModal: React.FC<ParetoLayoutModalProps> = ({
 
           {data && (
             <>
-              {/* Strategy Selector Cards */}
+              {/* Interactive CIOC Carrier Stepper & Architecture Sizing Bar */}
+              <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 rounded-xl p-5 text-white shadow-md space-y-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-blue-300 block mb-0.5">
+                      Interactive Hardware Topology Sizer
+                    </span>
+                    <h4 className="text-base font-bold tracking-tight">
+                      Adjust CIOC Carriers & Enclosure Footprint
+                    </h4>
+                  </div>
+
+                  {/* Stepper Controls */}
+                  <div className="flex items-center space-x-2 bg-white/10 backdrop-blur-md p-1.5 rounded-xl border border-white/20">
+                    <button
+                      type="button"
+                      disabled={customCiocs <= 4 || applying}
+                      onClick={() => setCustomCiocs((prev) => Math.max(4, prev - 2))}
+                      className="w-8 h-8 rounded-lg bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Decrease by 2 CIOCs"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <div className="px-3 text-center min-w-[110px]">
+                      <span className="text-xl font-extrabold font-mono text-yellow-300 block leading-tight">
+                        {customCiocs} CIOCs
+                      </span>
+                      <span className="text-[10px] text-blue-200 font-sans block">
+                        {calculatedCabinets} Cabinet Bays
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={customCiocs >= 24 || applying}
+                      onClick={() => setCustomCiocs((prev) => Math.min(24, prev + 2))}
+                      className="w-8 h-8 rounded-lg bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Increase by 2 CIOCs"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quick Presets */}
+                <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/10 text-xs">
+                  <span className="text-blue-200 text-[11px] font-medium mr-1">Quick Presets:</span>
+                  {[
+                    { label: '8 CIOCs (Compact 2-Bay)', count: 8, altId: 'ALT_MIN_HARDWARE' },
+                    { label: '12 CIOCs (Golden 3-Bay Spec)', count: 12, altId: 'ALT_MAX_SPARE' },
+                    { label: '16 CIOCs (Expansion 4-Bay)', count: 16, altId: 'ALT_MIN_MOVEMENT' },
+                    { label: '20 CIOCs (Mega Project 5-Bay)', count: 20, altId: 'ALT_MIN_MOVEMENT' },
+                  ].map((preset) => (
+                    <button
+                      key={preset.count}
+                      type="button"
+                      onClick={() => {
+                        setCustomCiocs(preset.count);
+                        setSelectedAltId(preset.altId);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg font-mono text-[11px] font-semibold border transition-all ${
+                        customCiocs === preset.count
+                          ? 'bg-yellow-400 text-slate-900 border-yellow-300 shadow-xs font-bold'
+                          : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Real-time Hardware Metrics Matrix */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-xs font-mono">
+                  <div className="p-2 rounded-lg bg-white/10 border border-white/10">
+                    <span className="text-[10px] text-blue-200 block">Total Channels</span>
+                    <span className="text-sm font-bold text-white">{totalSlots} Slots</span>
+                  </div>
+                  <div className="p-2 rounded-lg bg-white/10 border border-white/10">
+                    <span className="text-[10px] text-blue-200 block">Bay Width Footprint</span>
+                    <span className="text-sm font-bold text-white">{calculatedBayWidth} mm</span>
+                  </div>
+                  <div className="p-2 rounded-lg bg-white/10 border border-white/10">
+                    <span className="text-[10px] text-blue-200 block">Packing Density</span>
+                    <span className="text-sm font-bold text-white">{calculatedDensity}%</span>
+                  </div>
+                  <div className="p-2 rounded-lg bg-white/10 border border-white/10">
+                    <span className="text-[10px] text-blue-200 block">Spare Headroom</span>
+                    <span className="text-sm font-bold text-emerald-300">{calculatedHeadroom}% ({freeSpares} Free)</span>
+                  </div>
+                </div>
+
+                {/* Mathematical Feasibility Pre-Check Alert */}
+                {!isFeasible ? (
+                  <div className="p-3 bg-rose-950/80 border border-rose-500 rounded-lg flex items-center space-x-2.5 text-xs text-rose-200">
+                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span>
+                      <strong>Capacity Infeasible:</strong> {requiredChannels} required channels ({numOperating} signals + {numAlarms} alarms) exceed {totalSlots} available positions. Increase to at least {Math.ceil(requiredChannels / 96)} CIOCs.
+                    </span>
+                  </div>
+                ) : (
+                  <div className="p-2.5 bg-emerald-950/60 border border-emerald-500/80 rounded-lg flex items-center space-x-2 text-xs text-emerald-200">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>
+                      <strong>Verified Feasible:</strong> Accommodates all {numOperating} field loops with {freeSpares} spare positions ({calculatedHeadroom}% Headroom) across {calculatedCabinets} standard cabinet bays.
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Status / Error Toast */}
+              {applySuccess && (
+                <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs rounded-xl flex items-center space-x-2 shadow-xs">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="font-semibold">{applySuccess}</span>
+                </div>
+              )}
+
+              {applyError && (
+                <div className="p-3 bg-rose-50 border border-rose-300 text-rose-800 text-xs rounded-xl flex items-center space-x-2 shadow-xs">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span className="font-semibold">{applyError}</span>
+                </div>
+              )}
+
+              {/* Strategy Cards */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 {data.alternatives.map((alt) => {
                   const isSelected = alt.id === selectedAltId;
@@ -93,10 +286,13 @@ export const ParetoLayoutModal: React.FC<ParetoLayoutModalProps> = ({
                   return (
                     <div
                       key={alt.id}
-                      onClick={() => setSelectedAltId(alt.id)}
+                      onClick={() => {
+                        setSelectedAltId(alt.id);
+                        setCustomCiocs(alt.boq.cioc_carriers);
+                      }}
                       className={`p-4 rounded-xl border-2 transition-all cursor-pointer space-y-2.5 ${
                         isSelected
-                          ? 'border-indigo-600 bg-indigo-50/40 shadow-sm'
+                          ? 'border-indigo-600 bg-indigo-50/40 shadow-sm ring-1 ring-indigo-500'
                           : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
                       }`}
                     >
@@ -117,7 +313,7 @@ export const ParetoLayoutModal: React.FC<ParetoLayoutModalProps> = ({
 
                       <h4 className="text-xs font-bold text-slate-900 tracking-tight">{alt.name}</h4>
 
-                      {/* Prominent Physical Architecture Badges */}
+                      {/* Prominent Architecture Card */}
                       <div className="space-y-1 bg-white p-2.5 rounded-lg border border-slate-200/90 shadow-2xs">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold text-slate-900 flex items-center space-x-1">
@@ -183,28 +379,28 @@ export const ParetoLayoutModal: React.FC<ParetoLayoutModalProps> = ({
                     <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5">
                       <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
                         <span className="text-[10px] text-slate-500 font-semibold block">System Cabinets (DCS)</span>
-                        <span className="text-base font-bold font-mono text-slate-900">{selectedAlt.boq.system_cabinets} Bays</span>
+                        <span className="text-base font-bold font-mono text-slate-900">{calculatedCabinets} Bays</span>
                         <span className="text-[9px] text-slate-400 font-mono block mt-0.5">
-                          {selectedAlt.metrics.bay_width_mm || selectedAlt.boq.system_cabinets * 800}mm Width
+                          {calculatedBayWidth}mm Width
                         </span>
                       </div>
                       <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
                         <span className="text-[10px] text-slate-500 font-semibold block">CIOC Carriers (96-Ch)</span>
-                        <span className="text-base font-bold font-mono text-slate-900">{selectedAlt.boq.cioc_carriers} CIOCs</span>
+                        <span className="text-base font-bold font-mono text-slate-900">{customCiocs} CIOCs</span>
                         <span className="text-[9px] text-slate-400 font-mono block mt-0.5">
-                          {selectedAlt.boq.cioc_carriers * 8} Baseplates
+                          {customCiocs * 8} Baseplates
                         </span>
                       </div>
                       <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
                         <span className="text-[10px] text-slate-500 font-semibold block">Redundant PK Pairs</span>
-                        <span className="text-base font-bold font-mono text-slate-900">{selectedAlt.boq.controllers} Pairs</span>
+                        <span className="text-base font-bold font-mono text-slate-900">{calculatedCabinets} Pairs</span>
                         <span className="text-[9px] text-slate-400 font-mono block mt-0.5">Dedicated Controller</span>
                       </div>
                       <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
                         <span className="text-[10px] text-slate-500 font-semibold block">Total Channel Capacity</span>
-                        <span className="text-base font-bold font-mono text-slate-900">{selectedAlt.boq.total_channels} Slots</span>
+                        <span className="text-base font-bold font-mono text-slate-900">{totalSlots} Slots</span>
                         <span className="text-[9px] text-emerald-600 font-mono font-bold block mt-0.5">
-                          {selectedAlt.boq.operating_signals} Active
+                          {numOperating} Active
                         </span>
                       </div>
                       <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
@@ -214,7 +410,7 @@ export const ParetoLayoutModal: React.FC<ParetoLayoutModalProps> = ({
                       </div>
                       <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
                         <span className="text-[10px] text-slate-500 font-semibold block">SE6103 Covers</span>
-                        <span className="text-base font-bold font-mono text-slate-700">{selectedAlt.boq.spare_slots_covers} Positions</span>
+                        <span className="text-base font-bold font-mono text-slate-700">{freeSpares} Positions</span>
                         <span className="text-[9px] text-slate-400 font-mono block mt-0.5">Protected Growth</span>
                       </div>
                     </div>
@@ -231,8 +427,8 @@ export const ParetoLayoutModal: React.FC<ParetoLayoutModalProps> = ({
                     </div>
                     <div className="flex items-center space-x-2 text-slate-500 font-mono text-[11px]">
                       <Ruler className="w-3.5 h-3.5 text-slate-400" />
-                      <span>Technical Room Bay Width: {selectedAlt.metrics.bay_width_mm || selectedAlt.boq.system_cabinets * 800}mm</span>
-                      <span>({selectedAlt.metrics.overall_footprint_sqm} m²)</span>
+                      <span>Technical Room Bay Width: {calculatedBayWidth}mm</span>
+                      <span>({(calculatedCabinets * 1.2).toFixed(1)} m²)</span>
                     </div>
                   </div>
 
@@ -261,14 +457,50 @@ export const ParetoLayoutModal: React.FC<ParetoLayoutModalProps> = ({
           )}
         </div>
 
-        {/* Footer */}
-        <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-lg transition-colors"
-          >
-            Close
-          </button>
+        {/* Footer with 1-Click Reallocate Button */}
+        <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="text-xs text-slate-600 font-mono">
+            <span>Target Topology: </span>
+            <span className="font-bold text-slate-900">
+              {customCiocs} CIOCs ({calculatedCabinets} Cabinets · {calculatedBayWidth}mm Bay)
+            </span>
+            <span className="text-slate-400 ml-2">| {totalSlots} Channels</span>
+          </div>
+
+          <div className="flex items-center space-x-2.5 w-full sm:w-auto justify-end">
+            <button
+              type="button"
+              disabled={applying}
+              onClick={onClose}
+              className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={!isFeasible || applying}
+              onClick={handleApplyTopology}
+              className={`flex items-center space-x-2 px-4 py-2 text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer ${
+                !isFeasible
+                  ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                  : applying
+                  ? 'bg-indigo-700 text-white cursor-wait'
+                  : 'bg-indigo-600 hover:bg-indigo-700 text-white hover:shadow-md'
+              }`}
+            >
+              {applying ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Sizing & Reallocating via CP-SAT...</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4 fill-white" />
+                  <span>Apply {customCiocs} CIOCs & Reallocate</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>

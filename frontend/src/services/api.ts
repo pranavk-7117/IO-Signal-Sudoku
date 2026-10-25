@@ -222,8 +222,8 @@ export const api = {
   },
 
   // Allocation
-  runAllocation: async (projectId: number, revisionId: number, preserveExisting = true): Promise<AllocationRunResult> => {
-    const res = await fetch(`${API_BASE}/allocation/run?project_id=${projectId}&revision_id=${revisionId}&preserve_existing=${preserveExisting}`, {
+  runAllocation: async (projectId: number, revisionId: number, preserveExisting = true, fullHardwareSchedule = false): Promise<AllocationRunResult> => {
+    const res = await fetch(`${API_BASE}/allocation/run?project_id=${projectId}&revision_id=${revisionId}&preserve_existing=${preserveExisting}&full_hardware_schedule=${fullHardwareSchedule}`, {
       method: 'POST'
     });
     if (!res.ok) {

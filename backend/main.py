@@ -282,8 +282,20 @@ def run_allocation(
     project_id: int = Query(...),
     revision_id: int = Query(...),
     preserve_existing: bool = Query(True),
-    timeout_seconds: float = Query(15.0)
+    timeout_seconds: float = Query(15.0),
+    full_hardware_schedule: bool = Query(False)
 ):
+    if hasattr(preserve_existing, 'default'):
+        preserve_existing = preserve_existing.default
+    if hasattr(timeout_seconds, 'default'):
+        timeout_seconds = timeout_seconds.default
+    if hasattr(full_hardware_schedule, 'default'):
+        full_hardware_schedule = full_hardware_schedule.default
+
+    preserve_existing = bool(preserve_existing)
+    timeout_seconds = float(timeout_seconds)
+    full_hardware_schedule = bool(full_hardware_schedule)
+
     signals = DBService.get_imported_signals(project_id, revision_id)
     if not signals:
         raise HTTPException(status_code=400, detail="No imported signals found for this revision. Please import an IO list first.")
@@ -302,7 +314,12 @@ def run_allocation(
             prev_assignments_map = {a.tag: a for a in prev_allocs}
 
     engine = AllocationEngine(hw_config)
-    assignments = engine.run_allocation(signals, previous_assignments=prev_assignments_map, timeout_seconds=timeout_seconds)
+    assignments = engine.run_allocation(
+        signals,
+        previous_assignments=prev_assignments_map,
+        timeout_seconds=timeout_seconds,
+        full_hardware_schedule=full_hardware_schedule
+    )
     DBService.save_assignments(project_id, revision_id, assignments)
 
     # Immediately run independent validator
@@ -315,8 +332,12 @@ def run_allocation(
     for tq in tqs:
         DBService.create_or_update_tq(tq)
 
-    allocated = len([a for a in assignments if a.status == "Allocated"])
-    unallocated = len(assignments) - allocated
+    if full_hardware_schedule:
+        allocated = len([a for a in assignments if a.status == "Allocated" and getattr(a, "tag_status", "Field") in ["Field", "Cabinet Alarm"]])
+        unallocated = max(0, len(signals) - allocated)
+    else:
+        allocated = len([a for a in assignments if a.status == "Allocated"])
+        unallocated = len(assignments) - allocated
 
     diagnostics = engine.last_diagnostics or SolverDiagnostics(
         solver_name="Google OR-Tools CP-SAT",

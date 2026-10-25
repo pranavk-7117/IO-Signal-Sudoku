@@ -840,6 +840,10 @@ Click to inspect "Why not here?"`
         <ParetoLayoutModal
           projectId={currentProject.id}
           revisionId={currentRevision?.id}
+          onApplied={() => {
+            loadUtilisation();
+            setShowParetoModal(false);
+          }}
           onClose={() => setShowParetoModal(false)}
         />
       )}

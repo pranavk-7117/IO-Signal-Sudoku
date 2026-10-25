@@ -639,6 +639,8 @@ class DBService:
         cursor.execute("DELETE FROM allocation_assignments WHERE project_id = ? AND revision_id = ?;", (project_id, revision_id))
 
         for a in assignments:
+            if not a.signal_id or a.tag_status == 'Spare Slot':
+                continue
             cursor.execute("""
                 INSERT INTO allocation_assignments (
                     project_id, revision_id, signal_id, tag, cabinet_id, cioc_id, baseplate_id,
