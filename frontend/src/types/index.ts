@@ -171,6 +171,11 @@ export interface CharmSlot {
   signal_type?: string;
   charm_type?: string;
   terminal_block?: string;
+  cable_id?: string;
+  pair_number?: number;
+  cable_size?: string;
+  redundancy?: string;
+  loop_name?: string;
 }
 
 export interface BaseplateUtilisation {
@@ -465,7 +470,12 @@ export interface ParetoAlternative {
     spare_slots_covers: number;
   };
   metrics: {
-    estimated_hardware_cost_usd: number;
+    estimated_hardware_cost_usd?: number;
+    cioc_count?: number;
+    cabinet_bays?: number;
+    bay_width_mm?: number;
+    active_density_pct?: number;
+    segregation_level?: string;
     overall_footprint_sqm: number;
     spare_capacity_pct: number;
     resilience_score: number;

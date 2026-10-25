@@ -429,84 +429,395 @@ class ExcelHandler:
         for row_idx, a in enumerate(hw_assignments, 2):
             s = sig_map.get(a.tag.strip().upper()) if a.tag else None
 
-            # Map all 76 industrial attributes with strict DeltaV fidelity
+            # Base identifiers and status determination
             sr_no = getattr(a, "sr_no", None) or (row_idx - 1)
             rev_no = getattr(a, "revision_no", None) or revision_code
-            tag_nm = a.tag or "-"
-            tech_rm = getattr(a, "technical_room", None) or (s.technical_room if s else "-") or "-"
-            op_area = getattr(a, "operating_area", None) or (s.operating_area if s else "-") or "-"
-            risk_area = getattr(a, "risk_area", None) or (getattr(s, "risk_area", "-") if s else "-") or "-"
-            unit_val = getattr(a, "unit", None) or "-"
-            seg_val = getattr(a, "segregation", None) or (s.segregation if s and hasattr(s, "segregation") else "-") or "-"
-            dst_val = getattr(a, "dst_name", None) or "-"
-            svc_desc = getattr(a, "service_description", None) or a.description or (s.description if s else "-") or "-"
-            loc_val = getattr(a, "location", None) or tech_rm
-            io_type = "CHARMs IO" if tag_nm != "-" and a.status == "Allocated" else "-"
-            sig_type = a.signal_type or "-"
-            sig_level = getattr(a, "signal_level", None) or (s.signal_level if s else "-") or "-"
-            non_is = getattr(a, "non_is_is", None) or ("NON-IS" if tag_nm != "-" else "-")
-            eq_name = getattr(a, "equipment_name", None) or a.electronic_marshalling_cabinet or "-"
-            ext_pwr = getattr(a, "external_power", None) or (s.external_power if s else "-") or "-"
-            sys_cab = getattr(a, "system_cabinet", None) or a.cabinet_id or "-"
-            ctrl_val = getattr(a, "controller", None) or "-"
-            marsh_cab = getattr(a, "electronic_marshalling_cabinet", None) or "-"
-            cioc_val = getattr(a, "cioc_id", None) or "-"
-            bp_val = getattr(a, "baseplate_id", None) or "-"
-            ch_num = getattr(a, "channel_no", None) or a.charm_index or "-"
-            charm_num = getattr(a, "charm_no", None) or ch_num
-            charm_type_part = getattr(a, "charm_part_no", None) or a.charm_type or "-"
-            charm_desc = getattr(a, "charm_description", None) or "-"
-            charm_tb_part = getattr(a, "charm_tb_part_no", None) or "-"
-            charm_tb_desc = getattr(a, "charm_tb_description", None) or a.terminal_block or "-"
-            tb1 = getattr(a, "charm_tb1", None) or "-"
-            tb2 = getattr(a, "charm_tb2", None) or "-"
-            tb3 = getattr(a, "charm_tb3", None) or "-"
-            bp_adapt = getattr(a, "charm_baseplate_adapter", None) or "-"
-            m_fta = getattr(a, "m_fta", None) or "-"
-            m_fta_p = getattr(a, "m_fta_part_no", None) or "-"
-            m_fta_tb = getattr(a, "m_fta_tb", None) or "-"
-            m_fta_tb1 = getattr(a, "m_fta_tb1", None) or "-"
-            m_fta_tb2 = getattr(a, "m_fta_tb2", None) or "-"
-            m_fta_tb3 = getattr(a, "m_fta_tb3", None) or "-"
-            m_tb = getattr(a, "m_tb", None) or "-"
-            m_tb1 = getattr(a, "m_tb1", None) or "-"
-            m_tb2 = getattr(a, "m_tb2", None) or "-"
-            m_tb3 = getattr(a, "m_tb3", None) or "-"
-            irc_cab = getattr(a, "irc_aux_cabinet", None) or "-"
-            irc_tb = getattr(a, "irc_tb", None) or "-"
-            irc_tb1 = getattr(a, "irc_tb1", None) or "-"
-            irc_tb2 = getattr(a, "irc_tb2", None) or "-"
-            rel_spl = getattr(a, "relay_splitter", None) or "-"
-            rel_a1 = getattr(a, "relay_coil_a1", None) or "-"
-            rel_a2 = getattr(a, "relay_coil_a2", None) or "-"
-            rel_pos = getattr(a, "relay_contact_pos", None) or "-"
-            rel_neg = getattr(a, "relay_contact_neg", None) or "-"
-            fcbl_no = getattr(a, "field_cable_no", None) or a.cable_id or (s.cable_id if s else "-") or "-"
-            fcbl_sz = getattr(a, "field_cable_size", None) or (getattr(s, "field_cable_size", "-") if s else "-") or "-"
-            fcbl_pr = getattr(a, "field_cable_pair", None) or (f"Pair {a.pair_number}" if a.pair_number else "-")
-            irc_ftb = getattr(a, "irc_ftb", None) or "-"
-            irc_ftb1 = getattr(a, "irc_ftb1", None) or "-"
-            irc_ftb2 = getattr(a, "irc_ftb2", None) or "-"
-            ecbl_no = getattr(a, "elec_cable_no", None) or "-"
-            ecbl_sz = getattr(a, "elec_cable_size", None) or "-"
-            ecbl_pr = getattr(a, "elec_cable_pair", None) or "-"
             tag_st = getattr(a, "tag_status", None) or ("Field" if a.status == "Allocated" else a.status)
-            remarks = getattr(a, "remarks", None) or a.reason or "-"
-            batch_val = getattr(a, "batch", None) or "-"
-            hw_loop = getattr(a, "hw_loop_typical", None) or (getattr(s, "hw_loop_typical", "-") if s else "-") or "-"
-            sys2 = getattr(a, "system_2", None) or "-"
-            old_tag = getattr(a, "old_tag", None) or "-"
-            inst_type = getattr(a, "instrument_type", None) or (getattr(s, "instrument_type", "-") if s else "-") or "-"
-            fta_cbl = getattr(a, "fta_cable_name", None) or "-"
-            fta_fer = getattr(a, "fta_cable_ferrule_name", None) or "-"
-            cab_side = getattr(a, "cabinet_side", None) or "-"
-            chg_type = getattr(a, "change_type", None) or "-"
-            cab_viz = getattr(a, "cabinet_name_viz", None) or (f"{marsh_cab}({cab_side})" if marsh_cab != "-" else "-")
-            pwr_pos = getattr(a, "splitter_relay_pwr_tb_pos", None) or "-"
-            pwr_neg = getattr(a, "splitter_relay_pwr_tb_neg", None) or "-"
-            loop_nm = getattr(a, "loop_name", None) or (getattr(s, "loop_name", "-") if s else "-") or "-"
-            sec_unit = getattr(a, "section_sub_unit", None) or "-"
+            tag_nm = (a.tag or "").strip()
+            if not tag_nm:
+                tag_nm = "-" if tag_st in ["Spare Slot", "Wired Spare"] else ""
 
+            # Extract hardware index positions
+            bp_val = getattr(a, "baseplate_id", None) or "001-CBP-1"
+            bp_m = re.search(r'(\d+)$', bp_val)
+            bp_num = int(bp_m.group(1)) if bp_m else 1
+
+            ch_num = getattr(a, "channel_no", None) or a.charm_index or 1
+            cioc_val = getattr(a, "cioc_id", None) or "CIOC-01"
+            cioc_m = re.search(r'(\d+)$', cioc_val)
+            cioc_num = int(cioc_m.group(1)) if cioc_m else 1
+
+            # CHARM sequential position on carrier (1..96)
+            charm_num = (bp_num - 1) * 12 + ch_num
+
+            # Elevation: Front (CBP 1..4) vs Rear (CBP 5..8)
+            cab_side = "F" if bp_num <= 4 else "R"
+
+            # Technical Room & Operating Unit
+            unit_val = getattr(a, "unit", None)
+            if not unit_val or unit_val == "-":
+                tag_u_match = re.match(r"^(\d{3})", tag_nm) if tag_nm and tag_nm != "-" else None
+                if tag_u_match:
+                    unit_val = tag_u_match.group(1)
+                elif "500" in (a.system_cabinet or "") or "P24" in (a.system_cabinet or "") or "500" in (a.electronic_marshalling_cabinet or ""):
+                    unit_val = "500"
+                else:
+                    unit_val = "320"
+
+            tech_rm = getattr(a, "technical_room", None)
+            if not tech_rm or tech_rm == "-":
+                tech_rm = "PIB-24" if unit_val == "500" else "PIB-30"
+
+            op_area = getattr(a, "operating_area", None)
+            if not op_area or op_area == "-" or (unit_val == "320" and "RA" in str(op_area)):
+                op_area = "RA 500-02" if unit_val == "500" else "OA-11"
+
+            risk_area = getattr(a, "risk_area", None)
+            if not risk_area or risk_area == "-":
+                if unit_val == "500":
+                    risk_area = "RA 500-02"
+                elif unit_val == "440":
+                    risk_area = "RA 440-01"
+                else:
+                    risk_area = "RA 320-01"
+
+            # Cabinets & Controllers (Emerson DeltaV standard architecture)
+            if unit_val == "500":
+                sys_cab_def = "P24-DCS-50002-01"
+                ctrl_def = "P24DPK500201"
+                marsh_cab_def = "P24-DCM-50002-01"
+                cioc_naming_prefix = "P24DCIOC5002"
+            elif cioc_num > 8:
+                sys_cab_def = "P30-DCS-32001-02"
+                ctrl_def = "P30DPK320102"
+                marsh_cab_def = "P30-DCM-32001-02"
+                cioc_naming_prefix = "P30DCIOC3201"
+            else:
+                sys_cab_def = "P30-DCS-32001-01"
+                ctrl_def = "P30DPK320101"
+                marsh_cab_def = "P30-DCM-32001-01"
+                cioc_naming_prefix = "P30DCIOC3201"
+
+            sys_cab = getattr(a, "system_cabinet", None) or a.cabinet_id or sys_cab_def
+            if sys_cab == "-":
+                sys_cab = sys_cab_def
+
+            ctrl_val = getattr(a, "controller", None) or ctrl_def
+            if ctrl_val == "-":
+                ctrl_val = ctrl_def
+
+            marsh_cab = getattr(a, "electronic_marshalling_cabinet", None) or marsh_cab_def
+            if marsh_cab == "-":
+                marsh_cab = marsh_cab_def
+
+            cioc_val = getattr(a, "cioc_id", None) or f"{cioc_naming_prefix}{cioc_num:03d}"
+            if not cioc_val.startswith("P24") and not cioc_val.startswith("P30"):
+                cioc_val = f"{cioc_naming_prefix}{cioc_num:03d}"
+
+            cioc_suf = f"{cioc_num % 1000:03d}"
+            bp_val = f"{cioc_suf}-CBP-{bp_num}"
+            cab_viz = f"{marsh_cab}({cab_side})"
+
+            # DSTName
+            if tag_nm and tag_nm != "-":
+                dst_val = re.sub(r'[^A-Za-z0-9]', '', tag_nm) + "_"
+            else:
+                dst_val = "_"
+
+            # Service description & Location
+            if tag_st == "Cabinet Alarm":
+                svc_desc = f"{marsh_cab} TEMPERATURE" if ("DCM" in tag_nm or "0100" in tag_nm) else f"{sys_cab} TEMPERATURE"
+                loc_val = tech_rm
+            elif tag_st in ["Spare Slot", "Wired Spare"]:
+                svc_desc = "-"
+                loc_val = "-"
+            else:
+                svc_desc = getattr(a, "service_description", None) or a.description or (s.description if s else "-") or "-"
+                loc_val = getattr(a, "location", None) or "L"
+
+            # IO Type & Signal Categorization
+            if tag_st == "Spare Slot":
+                io_type = "-"
+                sig_type = "-"
+                sig_level = "-"
+                non_is = "-"
+            elif tag_st == "Cabinet Alarm":
+                io_type = "AIR"
+                sig_type = "RTD"
+                sig_level = "3-Wire"
+                non_is = "NON-IS"
+            else:
+                raw_sig = (a.signal_type or (s.signal_type if s else "") or "").upper()
+                if "RTD" in raw_sig:
+                    io_type = "AIR"
+                    sig_type = "RTD"
+                    sig_level = "3-Wire"
+                elif raw_sig.startswith("AI") or "4-20" in raw_sig:
+                    io_type = "AIR"
+                    sig_type = "4-20 ma HART"
+                    sig_level = "2-Wire"
+                elif raw_sig.startswith("AO"):
+                    io_type = "AOR"
+                    sig_type = "4-20 ma HART"
+                    sig_level = "2-Wire"
+                elif raw_sig.startswith("DI") or "DRY" in raw_sig:
+                    io_type = "DIR"
+                    sig_type = "24 VDC Dry Contact"
+                    sig_level = "2-Wire"
+                elif raw_sig.startswith("DO") or "SOLENOID" in raw_sig or "SOV" in tag_nm:
+                    io_type = "DOR"
+                    sig_type = "DO 24V DC Isolated" if ("ISOLATED" in raw_sig or "SOV" in tag_nm) else "24 VDC High Side"
+                    sig_level = "2-Wire"
+                else:
+                    io_type = "AIR"
+                    sig_type = "4-20 ma HART"
+                    sig_level = "2-Wire"
+                non_is = "NON-IS"
+
+            # Segregation Train A / Train B
+            seg_val = getattr(a, "segregation", None)
+            if not seg_val or seg_val == "-":
+                if s and s.segregation and s.segregation != "-":
+                    seg_val = s.segregation
+                elif s and s.redundancy in ["A", "A-CONTROL", "TR-A"]:
+                    seg_val = "A-CONTROL"
+                elif s and s.redundancy in ["B", "B-CONTROL", "TR-B"]:
+                    seg_val = "B-CONTROL"
+                elif tag_st in ["Cabinet Alarm", "Spare Slot"]:
+                    seg_val = "-"
+                elif cioc_num % 2 == 1:
+                    seg_val = "A-CONTROL"
+                else:
+                    seg_val = "B-CONTROL"
+
+            # Equipment Name
+            if tag_st == "Cabinet Alarm":
+                eq_name = marsh_cab if "DCM" in tag_nm else sys_cab
+            elif tag_st in ["Spare Slot", "Wired Spare"]:
+                eq_name = "-"
+            else:
+                eq_name = getattr(a, "equipment_name", None)
+                if not eq_name or eq_name == "-":
+                    eq_m = re.match(r"^(\d{3})-([A-Z]+)\s*-(\d+)", tag_nm)
+                    if eq_m:
+                        u, let, num = eq_m.group(1), eq_m.group(2), eq_m.group(3)
+                        eq_name = f"{u}-D-{num[:2]}01"
+                    else:
+                        eq_name = f"{unit_val}-EQ-01"
+
+            ext_pwr = "-"
+
+            # CHARM Hardware Component Mapping & Terminal Pin designations
+            if tag_st == "Spare Slot":
+                charm_type_part = "SE6103"
+                charm_desc = "CHARM PROTECTION COVER"
+                charm_tb_part = "SE4501"
+                charm_tb_desc = "Standard CHARM Terminal Block"
+                tb1 = "-"
+                tb2 = "-"
+                tb3 = "-"
+            elif sig_type == "RTD":
+                charm_type_part = "SE4303T03"
+                charm_desc = "RTD Input Charm"
+                charm_tb_part = "SE4501"
+                charm_tb_desc = "Standard CHARM Terminal Block"
+                tb1 = "1"
+                tb2 = "2"
+                tb3 = "4"
+            elif io_type == "AIR":
+                charm_type_part = "SE4303T01"
+                charm_desc = "AI 4-20 MA HART CHARM"
+                charm_tb_part = "SE4501"
+                charm_tb_desc = "Standard CHARM Terminal Block"
+                tb1 = "1"
+                tb2 = "2"
+                tb3 = "-"
+            elif io_type == "AOR":
+                charm_type_part = "SE4304T01"
+                charm_desc = "AO 4-20 MA HART CHARM"
+                charm_tb_part = "SE4501"
+                charm_tb_desc = "Standard CHARM Terminal Block"
+                tb1 = "1"
+                tb2 = "2"
+                tb3 = "-"
+            elif io_type == "DIR":
+                charm_type_part = "SE4301T02"
+                charm_desc = "DISCRETE INPUT CHARM; 24 VDC DRY CONTACT: LOW SIDE SENSE"
+                charm_tb_part = "SE4501"
+                charm_tb_desc = "Standard CHARM Terminal Block"
+                tb1 = "1"
+                tb2 = "2"
+                tb3 = "-"
+            elif io_type == "DOR":
+                if sig_type == "DO 24V DC Isolated" or "SOV" in tag_nm or "ISOLATED" in str(getattr(a, "terminal_block", "")).upper():
+                    charm_type_part = "SE4302T02"
+                    charm_desc = "DO 24V DC Isolated"
+                    charm_tb_part = "SE4502"
+                    charm_tb_desc = "Fused-Injected-Power Terminal Block"
+                    tb1 = "-"
+                    tb2 = "2"
+                    tb3 = "4"
+                else:
+                    charm_type_part = "SE4302T01"
+                    charm_desc = "DISCRETE OUTPUT CHARM; 24 VDC HIGH SIDE"
+                    charm_tb_part = "SE4501"
+                    charm_tb_desc = "Standard CHARM Terminal Block"
+                    tb1 = "1"
+                    tb2 = "2"
+                    tb3 = "-"
+            else:
+                charm_type_part = "SE4303T01"
+                charm_desc = "AI 4-20 MA HART CHARM"
+                charm_tb_part = "SE4501"
+                charm_tb_desc = "Standard CHARM Terminal Block"
+                tb1 = "1"
+                tb2 = "2"
+                tb3 = "-"
+
+            bp_adapt = "-"
+            m_fta = "-"
+            m_fta_p = "-"
+            m_fta_tb = "-"
+            m_fta_tb1 = "-"
+            m_fta_tb2 = "-"
+            m_fta_tb3 = "-"
+            m_tb = "-"
+            m_tb1 = "-"
+            m_tb2 = "-"
+            m_tb3 = "-"
+            irc_cab = "-"
+            irc_tb = "-"
+            irc_tb1 = "-"
+            irc_tb2 = "-"
+            rel_spl = "-"
+            rel_a1 = "-"
+            rel_a2 = "-"
+            rel_pos = "-"
+            rel_neg = "-"
+
+            # Field Cable Multi-Pair Assignments
+            if tag_st == "Cabinet Alarm":
+                fcbl_no = "P24-ICE-0001" if unit_val == "500" else "P30-ICE-0001"
+                fcbl_sz = "1TX1.3MM2/FR/OS/NIS"
+                fcbl_pr = "Triad 1"
+            elif tag_st in ["Spare Slot", "Wired Spare"]:
+                fcbl_no = "-"
+                fcbl_sz = "-"
+                fcbl_pr = "-"
+            else:
+                fcbl_no = getattr(a, "field_cable_no", None) or a.cable_id or (s.cable_id if s else "-") or "-"
+                if fcbl_no and fcbl_no != "-":
+                    if "CE" in fcbl_no or "24P" in fcbl_no:
+                        fcbl_sz = "24PX1MM2/FR/IND&OS/ARM/NIS"
+                    elif "12P" in fcbl_no:
+                        fcbl_sz = "12PX1MM2/FR/IND&OS/ARM/NIS"
+                    elif "6P" in fcbl_no:
+                        fcbl_sz = "6PX1MM2/FR/IND&OS/ARM/NIS"
+                    elif "CS" in fcbl_no:
+                        fcbl_sz = "24PX1MM2/FR/IND&OS/ARM/NIS"
+                    else:
+                        fcbl_sz = "24PX1MM2/FR/IND&OS/ARM/NIS"
+                else:
+                    fcbl_sz = "-"
+
+                pair_val = a.pair_number or (s.pair_number if s else None)
+                if pair_val:
+                    fcbl_pr = f"Pair {pair_val}"
+                elif fcbl_no != "-":
+                    fcbl_pr = f"Pair {ch_num}"
+                else:
+                    fcbl_pr = "-"
+
+            irc_ftb = "-"
+            irc_ftb1 = "-"
+            irc_ftb2 = "-"
+            ecbl_no = "-"
+            ecbl_sz = "-"
+            ecbl_pr = "-"
+
+            # Remarks & Batch
+            if tag_st == "Cabinet Alarm":
+                remarks = "Internal Cabinet Alarm."
+            elif tag_st == "Wired Spare":
+                remarks = "Pre-allocated wired spare"
+            elif tag_st == "Spare Slot":
+                remarks = "Spare Position with SE6103 Cover"
+            else:
+                remarks = getattr(a, "remarks", None) or a.reason or "-"
+
+            batch_val = "B1"
+
+            # HW Loop Typical
+            if tag_st == "Spare Slot":
+                hw_loop = "-"
+            elif sig_type == "RTD":
+                hw_loop = "SA-AMI-530-4EME-000041 - LT-03"
+            elif io_type == "AIR":
+                hw_loop = "HW-TYP-41 - LT-01"
+            elif io_type == "AOR":
+                hw_loop = "HW-TYP-41 - LT-04"
+            elif io_type == "DIR":
+                hw_loop = "SA-AMI-530-4EME-000029 SH.16"
+            elif io_type == "DOR":
+                hw_loop = "HW-TYP-DO-01"
+            else:
+                hw_loop = "HW-TYP-41 - LT-01"
+
+            sys2 = "-"
+            old_tag = getattr(a, "old_tag", None) or "-"
+
+            # Instrument Type
+            if tag_st in ["Spare Slot", "Cabinet Alarm", "Wired Spare"]:
+                inst_type = "-"
+            else:
+                inst_m = re.search(r'[A-Za-z]+', tag_nm)
+                code = inst_m.group(0).upper() if inst_m else ""
+                if "LT" in code:
+                    inst_type = "dP Level Transmitter"
+                elif "LV" in code:
+                    inst_type = "Control Valve"
+                elif "FT" in code:
+                    inst_type = "Flow Transmitter"
+                elif "FV" in code:
+                    inst_type = "Control Valve"
+                elif "PT" in code:
+                    inst_type = "Pressure Transmitter"
+                elif "PV" in code:
+                    inst_type = "Pressure Control Valve"
+                elif "TT" in code:
+                    inst_type = "Temperature Transmitter"
+                elif "TV" in code:
+                    inst_type = "Temperature Control Valve"
+                elif "ZS" in code or "LS" in code:
+                    inst_type = "Limit Switch"
+                elif "XV" in code or "SOV" in code:
+                    inst_type = "Solenoid Valve"
+                else:
+                    inst_type = "Transmitter / Sensor"
+
+            fta_cbl = "-"
+            fta_fer = "-"
+            chg_type = getattr(a, "change_type", None) or "-"
+            pwr_pos = "-"
+            pwr_neg = "-"
+
+            # Loop Name & Section / Sub Unit
+            if tag_st in ["Spare Slot", "Cabinet Alarm", "Wired Spare"]:
+                loop_nm = "-"
+                sec_unit = "-"
+            else:
+                lp_m = re.match(r"^(\d{3})-([A-Z])([A-Z]*)\s*-(\d+)", tag_nm)
+                if lp_m:
+                    loop_nm = f"{lp_m.group(1)}-{lp_m.group(2)} -{lp_m.group(4)}"
+                else:
+                    loop_nm = f"{tag_nm}_LOOP"
+
+                sec_m = re.search(r'(\d+)[A-Z]*$', tag_nm)
+                if sec_m:
+                    digits = sec_m.group(1)
+                    sec_unit = f"{digits[0]}00" if len(digits) >= 2 else "800"
+                else:
+                    sec_unit = "800"
             row_vals = [
                 sr_no, rev_no, tag_nm, tech_rm, op_area, risk_area, unit_val, seg_val, dst_val, svc_desc,
                 loc_val, io_type, sig_type, sig_level, non_is, eq_name, ext_pwr, sys_cab, ctrl_val, marsh_cab,

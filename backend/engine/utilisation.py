@@ -166,7 +166,12 @@ class UtilisationCalculator:
                                 signal_tag=a.tag,
                                 signal_type=a.signal_type,
                                 charm_type=a.charm_type or a.charm_part_no,
-                                terminal_block=a.terminal_block or a.charm_tb_part_no
+                                terminal_block=a.terminal_block or a.charm_tb_part_no,
+                                cable_id=a.cable_id or a.field_cable_no,
+                                pair_number=a.pair_number,
+                                cable_size=a.field_cable_size,
+                                redundancy=a.segregation or (a.custom_attributes.get("redundancy") if a.custom_attributes else None),
+                                loop_name=a.loop_name
                             ))
                         else:
                             slots_list.append(CharmSlotModel(

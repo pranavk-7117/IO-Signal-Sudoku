@@ -363,6 +363,11 @@ class CharmSlotModel(BaseModel):
     signal_type: Optional[str] = None
     charm_type: Optional[str] = None
     terminal_block: Optional[str] = None
+    cable_id: Optional[str] = None
+    pair_number: Optional[int] = None
+    cable_size: Optional[str] = None
+    redundancy: Optional[str] = None
+    loop_name: Optional[str] = None
 
 class BaseplateUtilisationModel(BaseModel):
     baseplate_id: str
